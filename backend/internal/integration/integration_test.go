@@ -100,23 +100,23 @@ func TestMigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pending: %v", err)
 	}
-	if pending != 9 {
-		t.Fatalf("pending = %d, want 9", pending)
+	if pending != 10 {
+		t.Fatalf("pending = %d, want 10", pending)
 	}
 
 	applied, err := migrate.Up(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if applied != 9 {
-		t.Fatalf("applied = %d, want 9", applied)
+	if applied != 10 {
+		t.Fatalf("applied = %d, want 10", applied)
 	}
 
 	status, err := migrate.Status(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if len(status.Applied) != 9 || status.PendingCount != 0 || status.LatestApplied != "0009" {
+	if len(status.Applied) != 10 || status.PendingCount != 0 || status.LatestApplied != "0010" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 
@@ -128,12 +128,12 @@ func TestMigrationLifecycle(t *testing.T) {
 		t.Fatal("platform_metadata table was not created")
 	}
 
-	reverted, err := migrate.Down(ctx, pool, fsys, 6)
+	reverted, err := migrate.Down(ctx, pool, fsys, 7)
 	if err != nil {
 		t.Fatalf("down: %v", err)
 	}
-	if reverted != 6 {
-		t.Fatalf("reverted = %d, want 6", reverted)
+	if reverted != 7 {
+		t.Fatalf("reverted = %d, want 7", reverted)
 	}
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform_metadata') IS NOT NULL`).Scan(&tablePresent); err != nil {
 		t.Fatalf("table check after down: %v", err)
@@ -265,8 +265,8 @@ func TestHealthAndReadiness(t *testing.T) {
 
 	// A schema with an extra unapplied migration must fail readiness.
 	pendingFS := migrationsFS(t)
-	pendingFS["0010_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
-	pendingFS["0010_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0011_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0011_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
 	pendingRouter := httpapi.NewRouter(httpapi.Deps{
 		Logger: testLogger(), Pool: pool, Migrations: pendingFS,
 		ServiceName: "atlas-api", Version: "test",
