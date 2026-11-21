@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS provenance_records;
+DROP TABLE IF EXISTS normalized_records;
+DROP TABLE IF EXISTS source_records;
+DROP TABLE IF EXISTS sync_cursors;
+DROP TABLE IF EXISTS sync_runs;
+DROP TABLE IF EXISTS integration_credentials;
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_organization_id_id_key;
+ALTER TABLE integrations DROP COLUMN IF EXISTS last_synced_at;
+ALTER TABLE integrations DROP COLUMN IF EXISTS config;
+ALTER TABLE integrations DROP COLUMN IF EXISTS kind;

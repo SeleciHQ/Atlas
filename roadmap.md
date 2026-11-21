@@ -45,8 +45,8 @@ Status values: **Not started**, **In progress**, **Blocked**, **Under review**, 
 | 0 | Repository assessment and planning | None | Completed | Existing work understood and preserved; boundaries and ADRs documented |
 | 1 | Backend foundation | Phase 0 | Completed | Go service, Chi, pgx/sqlc, migrations, config, health, tests all work |
 | 2 | Identity, tenancy and security foundation | Phase 1 | Completed | Four principal classes; trusted org context; RLS; cross-tenant access rejected; WorkOS AuthKit E2E passed |
-| 3 | Storage and asynchronous processing | Phase 2 | Under review | Secure document storage; durable, retryable, idempotent job execution |
-| 4 | Connector framework and ingestion | Phase 3 | Not started | Source records ingested with lineage; connectors isolated from canonical logic |
+| 3 | Storage and asynchronous processing | Phase 2 | Completed | Secure document storage; durable, retryable, idempotent job execution |
+| 4 | Connector framework and ingestion | Phase 3 | In progress | Source records ingested with lineage; connectors isolated from canonical logic |
 | 5 | Canonical data model and ontology | Phase 4 | Not started | Canonical entities, many-to-many relationships and source links verified |
 | 6 | Document extraction and entity resolution | Phases 4–5 | Not started | Validated extraction; evidence-backed entity links; no silent merges |
 | 7 | Invoice reconciliation engine | Phases 5–6 | Not started | Deterministic, versioned, explainable two- and three-way reconciliation |
@@ -739,6 +739,16 @@ a shared connector contract, without touching canonical business logic.
   Phase 1 and keep key management out of domain code.
 - Risk: provider rate-limit behaviour unknown. Mitigation: framework-level backoff and observable metrics.
 
+**Implementation status (2026-11-21, in progress):** migration `0007_connectors` and the core ingestion path are
+implemented: `internal/connectors` (contract + registry + deterministic mock + document-inbox adapter),
+envelope-encrypted credentials (`internal/secrets`), `internal/ingestion` (validated sync, idempotent raw source
+records with SHA-256, versioned normalization `mock-v1`, provenance, cursors, sync runs, health), and the
+worker's `connector.sync` handler. Tests cover audit of the mock fixtures, pagination/empty pages, sync
+idempotency (repeat sync writes zero duplicates), cursor advancement, raw-payload checksum preservation,
+encrypted credential storage, and connector unit tests. **Remaining:** integration/credential HTTP endpoints,
+webhook receiving with signature/dedupe/timestamp checks, document-inbox ingestion wiring, recorded-fixture
+contract tests for 429/5xx/token refresh, and the connector-import boundary check.
+
 ---
 
 ### Phase 5 — Canonical data model and ontology
@@ -1262,3 +1272,4 @@ When a phase ends, report exactly this:
 | 8 | ADR-003 (write-back target) | No — mock write path |
 | 9 | ADR-002, ADR-004 (production tokens), ADR-009 (matrix) | ADR-009 validated |
 | 10 | ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-010 | Yes — all finalized |
+

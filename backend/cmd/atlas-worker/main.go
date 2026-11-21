@@ -13,8 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"atlas/internal/connectors"
+	"atlas/internal/ingestion"
 	"atlas/internal/jobs"
 	"atlas/internal/platform/db"
+	"atlas/internal/secrets"
 )
 
 type handler func(context.Context, *jobs.Job) (json.RawMessage, error)
@@ -58,6 +61,36 @@ func run() error {
 		"system.noop": func(context.Context, *jobs.Job) (json.RawMessage, error) {
 			return json.RawMessage(`{"ok":true}`), nil
 		},
+	}
+
+	if rawKey := os.Getenv("ATLAS_SECRET_KEY"); rawKey != "" {
+		sealer, err := secrets.NewSealer(rawKey)
+		if err != nil {
+			return fmt.Errorf("configure secret key: %w", err)
+		}
+		registry := connectors.NewRegistry()
+		registry.Register("mock", connectors.NewMock)
+		registry.Register("document_inbox", connectors.NewDocumentInbox)
+		ingestionService := ingestion.NewService(pool, registry, sealer)
+		handlers["connector.sync"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
+			var request struct {
+				OrganizationID string `json:"organization_id"`
+				IntegrationID  string `json:"integration_id"`
+			}
+			if err := json.Unmarshal(job.Payload, &request); err != nil {
+				return nil, fmt.Errorf("decode connector sync payload: %w", err)
+			}
+			if request.OrganizationID == "" || request.IntegrationID == "" {
+				return nil, fmt.Errorf("connector sync payload requires organization_id and integration_id")
+			}
+			summary, err := ingestionService.RunSync(ctx, request.OrganizationID, request.IntegrationID, 25)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(summary)
+		}
+	} else {
+		logger.Warn("connector_sync_disabled", "detail", "set ATLAS_SECRET_KEY to enable connector jobs")
 	}
 
 	logger.Info("worker_started", "lease", lease.String(), "poll", poll.String())

@@ -14,8 +14,10 @@ sign-in → JIT user → admin membership → session), so ADR-002 is Accepted a
 `OIDC_PRODUCTION_VERIFIED=true` gate is set; production deployment still needs production WorkOS credentials.
 Phase 3 has delivered migration `0005_jobs_outbox`, the `internal/jobs` queue/outbox package, the
 worker/scheduler entrypoints, and the `0006_documents` upload/download lifecycle with local and R2 adapters
-(`internal/storage`). A Python worker skeleton shows the result-only contract. Phase 3 is under review. There
-are still **no business handlers**.
+(`internal/storage`). A Python worker skeleton shows the result-only contract. Phase 3 is complete. Phase 4
+(in progress) adds the connector contract, registry, mock/document-inbox adapters, envelope-encrypted
+credentials, sync runs/cursors, and immutable source → normalized records with provenance. There are still
+**no business handlers**.
 
 ## Toolchain
 
@@ -212,6 +214,26 @@ server-chosen (`organization/document/version`); clients cannot choose keys.
 - `python/atlas_worker.py` is the Python worker skeleton: it claims `document.extract` jobs, writes only
   `job_results`, and never writes canonical tables.
 
+## Connectors and ingestion (Phase 4, in progress)
+
+Migration `0007_connectors` adds integration settings, `integration_credentials` (envelope-encrypted),
+`sync_runs`, `sync_cursors`, immutable `source_records` (raw payload as `bytea` + SHA-256), `normalized_records`
+(`mapping_version`) and `provenance_records` — all RLS-scoped.
+
+- `internal/connectors` defines the contract (`ValidateConnection`, `DiscoverCapabilities`, `Sync`,
+  `FetchDocument`, `ExecuteWrite`), a thread-safe registry, a deterministic `mock` adapter (suppliers, POs,
+  deliveries, invoices with pagination) and the upload-driven `document_inbox` adapter. Adapters only translate
+  provider shapes; they contain no canonical logic.
+- `internal/ingestion` runs syncs: validates the connection, pages objects within a limit, persists raw source
+  records idempotently (`UNIQUE(organization, integration, object_type, external_id)`), applies the versioned
+  normalization (`mock-v1`), writes provenance, advances cursors and records `sync_runs`; the integration health
+  becomes `degraded` on failure.
+- `internal/secrets` implements envelope encryption (AES-256-GCM data key per credential, master key wraps it)
+  bound to organization + integration; `ATLAS_SECRET_KEY` (32 bytes base64/hex) enables the worker's
+  `connector.sync` job handler, payload `{"organization_id": "...", "integration_id": "..."}`.
+- Remaining Phase 4 work: management HTTP endpoints, webhook receiving/dedupe, document-inbox ingestion wiring,
+  and recorded-fixture contract tests for 429/5xx/token refresh.
+
 ## Jobs, outbox and workers (Phase 3)
 
 Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `outbox_events` (all RLS-scoped to
@@ -233,8 +255,9 @@ Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `out
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
-`audit_events`, `documents`, `document_versions`, `jobs`, `job_attempts`, `job_results`, `outbox_events`) use
-PostgreSQL RLS keyed on `app.organization_id`, set per transaction by
+`integration_credentials`, `sync_runs`, `sync_cursors`, `source_records`, `normalized_records`,
+`provenance_records`, `audit_events`, `documents`, `document_versions`, `jobs`, `job_attempts`, `job_results`,
+`outbox_events`) use PostgreSQL RLS keyed on `app.organization_id`, set per transaction by
 `internal/tenancy`. `users` is a global identity record and `sessions` is read before an organization context
 exists; both remain intentionally **not** RLS-protected. They are protected by separated database roles and a
 narrow read function instead:
