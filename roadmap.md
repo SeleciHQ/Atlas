@@ -46,7 +46,7 @@ Status values: **Not started**, **In progress**, **Blocked**, **Under review**, 
 | 1 | Backend foundation | Phase 0 | Completed | Go service, Chi, pgx/sqlc, migrations, config, health, tests all work |
 | 2 | Identity, tenancy and security foundation | Phase 1 | Completed | Four principal classes; trusted org context; RLS; cross-tenant access rejected; WorkOS AuthKit E2E passed |
 | 3 | Storage and asynchronous processing | Phase 2 | Completed | Secure document storage; durable, retryable, idempotent job execution |
-| 4 | Connector framework and ingestion | Phase 3 | In progress | Source records ingested with lineage; connectors isolated from canonical logic |
+| 4 | Connector framework and ingestion | Phase 3 | Under review | Source records ingested with lineage; connectors isolated from canonical logic |
 | 5 | Canonical data model and ontology | Phase 4 | Not started | Canonical entities, many-to-many relationships and source links verified |
 | 6 | Document extraction and entity resolution | Phases 4–5 | Not started | Validated extraction; evidence-backed entity links; no silent merges |
 | 7 | Invoice reconciliation engine | Phases 5–6 | Not started | Deterministic, versioned, explainable two- and three-way reconciliation |
@@ -1272,4 +1272,5 @@ When a phase ends, report exactly this:
 | 8 | ADR-003 (write-back target) | No — mock write path |
 | 9 | ADR-002, ADR-004 (production tokens), ADR-009 (matrix) | ADR-009 validated |
 | 10 | ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-010 | Yes — all finalized |
+
 

@@ -13,14 +13,18 @@ import (
 	"time"
 
 	"atlas/internal/authorization"
+	"atlas/internal/connectors"
 	"atlas/internal/documents"
 	"atlas/internal/httpapi"
 	"atlas/internal/identity"
+	"atlas/internal/ingestion"
+	"atlas/internal/jobs"
 	"atlas/internal/orgs"
 	"atlas/internal/platform/config"
 	"atlas/internal/platform/db"
 	"atlas/internal/platform/logging"
 	"atlas/internal/platform/migrate"
+	"atlas/internal/secrets"
 	"atlas/internal/storage"
 )
 
@@ -130,6 +134,22 @@ func run() error {
 	}
 	documentsService := documents.NewService(pool, store)
 
+	queue := jobs.NewQueue(pool)
+	var integrationService *ingestion.Service
+	if rawKey := os.Getenv("ATLAS_SECRET_KEY"); rawKey != "" {
+		sealer, err := secrets.NewSealer(rawKey)
+		if err != nil {
+			return fmt.Errorf("configure secret key: %w", err)
+		}
+		registry := connectors.NewRegistry()
+		registry.Register("mock", connectors.NewMock)
+		registry.Register("document_inbox", connectors.NewDocumentInbox)
+		integrationService = ingestion.NewService(pool, registry, sealer)
+		logger.Info("integrations_enabled")
+	} else {
+		logger.Warn("integrations_disabled", "detail", "set ATLAS_SECRET_KEY to enable integration management")
+	}
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger:         logger,
 		Pool:           pool,
@@ -142,6 +162,8 @@ func run() error {
 		OIDCEnabled:    cfg.OIDCEnabled,
 		Invitations:    invitations,
 		Documents:      documentsService,
+		Integrations:   integrationService,
+		Queue:          queue,
 		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),

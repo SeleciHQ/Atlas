@@ -58,6 +58,12 @@ func finalizeDocumentHandler(deps Deps) http.HandlerFunc {
 			WriteError(w, r, deps.Logger, err)
 			return
 		}
+		if deps.Integrations != nil {
+			if err := deps.Integrations.IngestDocument(r.Context(), principal.OrganizationID, document.ID,
+				document.Kind, document.ContentType, document.SizeBytes, document.SHA256); err != nil {
+				deps.Logger.Warn("document_inbox_ingestion_failed", "document_id", document.ID, "error", err.Error())
+			}
+		}
 		WriteJSON(w, http.StatusOK, map[string]any{"document": document})
 	}
 }

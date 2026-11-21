@@ -51,6 +51,12 @@ func (Mock) DiscoverCapabilities(_ context.Context, _ ConnectionConfig) (Capabil
 }
 
 func (Mock) Sync(_ context.Context, cfg ConnectionConfig, objectType ObjectType, cursor Cursor) (SyncPage, error) {
+	switch mode, _ := cfg.Settings["failure_mode"].(string); mode {
+	case "rate_limited":
+		return SyncPage{RateLimit: &RateLimit{Remaining: 0, RetryAfter: time.Millisecond}}, nil
+	case "server_error":
+		return SyncPage{}, fmt.Errorf("mock upstream returned 500")
+	}
 	records, ok := mockFixtures[objectType]
 	if !ok {
 		return SyncPage{}, fmt.Errorf("mock connector does not support object %q", objectType)

@@ -231,8 +231,10 @@ Migration `0007_connectors` adds integration settings, `integration_credentials`
 - `internal/secrets` implements envelope encryption (AES-256-GCM data key per credential, master key wraps it)
   bound to organization + integration; `ATLAS_SECRET_KEY` (32 bytes base64/hex) enables the worker's
   `connector.sync` job handler, payload `{"organization_id": "...", "integration_id": "..."}`.
-- Remaining Phase 4 work: management HTTP endpoints, webhook receiving/dedupe, document-inbox ingestion wiring,
-  and recorded-fixture contract tests for 429/5xx/token refresh.
+- Management endpoints: `POST/GET /v1/integrations`, credentials, `/sync` (enqueues `connector.sync`), plus
+  `POST /v1/webhooks/{organization}/{integration}` (HMAC-SHA256 over `timestamp.body`, 5-minute window, dedupe
+  by event id, raw persistence, targeted sync). Finalizing a document records it through the document-inbox
+  pipeline. Follow-up: provider-specific rate-limit retry/token-refresh orchestration.
 
 ## Jobs, outbox and workers (Phase 3)
 
@@ -351,3 +353,4 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+

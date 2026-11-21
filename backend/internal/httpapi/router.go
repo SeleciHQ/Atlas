@@ -16,6 +16,8 @@ import (
 	"atlas/internal/authorization"
 	"atlas/internal/documents"
 	"atlas/internal/identity"
+	"atlas/internal/ingestion"
+	"atlas/internal/jobs"
 	"atlas/internal/orgs"
 	"atlas/internal/platform/apperr"
 )
@@ -33,6 +35,8 @@ type Deps struct {
 	OIDCEnabled    bool
 	Invitations    *identity.InvitationService
 	Documents      *documents.Service
+	Integrations   *ingestion.Service
+	Queue          *jobs.Queue
 	StorageHandler http.Handler
 	Authorizer     authorization.Service
 	Orgs           *orgs.Service
@@ -61,6 +65,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.Get("/auth/oidc/start", oidcStartHandler(deps))
 			r.Get("/auth/oidc/callback", oidcCallbackHandler(deps))
 		}
+		r.Post("/webhooks/{organizationID}/{integrationID}", webhookHandler(deps))
 		if deps.StorageHandler != nil {
 			r.Handle("/storage/local/object", deps.StorageHandler)
 		}
@@ -82,6 +87,16 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/documents/{documentID}", getDocumentHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionDocumentsRead)).
 				Get("/documents/{documentID}/download", downloadDocumentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionIntegrationsRead)).
+				Get("/integrations", listIntegrationsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionIntegrationsRead)).
+				Get("/integrations/{integrationID}", getIntegrationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
+				Post("/integrations", createIntegrationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
+				Post("/integrations/{integrationID}/credentials", setIntegrationCredentialsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
+				Post("/integrations/{integrationID}/sync", triggerIntegrationSyncHandler(deps))
 		})
 	})
 

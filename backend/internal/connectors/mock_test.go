@@ -50,3 +50,17 @@ func TestMockDeterministicPayload(t *testing.T) {
 		t.Fatal("mock payloads are not deterministic")
 	}
 }
+
+func TestMockFailureFixtures(t *testing.T) {
+	mock := NewMock()
+	page, err := mock.Sync(context.Background(), ConnectionConfig{Settings: map[string]any{"failure_mode": "rate_limited"}}, ObjectInvoice, "")
+	if err != nil || page.RateLimit == nil || page.RateLimit.RetryAfter <= 0 {
+		t.Fatalf("rate-limit fixture = %+v, %v", page, err)
+	}
+	if _, err := mock.Sync(context.Background(), ConnectionConfig{Settings: map[string]any{"failure_mode": "server_error"}}, ObjectInvoice, ""); err == nil {
+		t.Fatal("server-error fixture did not fail")
+	}
+	if err := mock.ValidateConnection(context.Background(), ConnectionConfig{Settings: map[string]any{"require_credentials": true}}); err == nil {
+		t.Fatal("missing credentials should fail validation")
+	}
+}
