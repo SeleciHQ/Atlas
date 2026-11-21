@@ -214,7 +214,14 @@ server-chosen (`organization/document/version`); clients cannot choose keys.
 - `python/atlas_worker.py` is the Python worker skeleton: it claims `document.extract` jobs, writes only
   `job_results`, and never writes canonical tables.
 
-## Canonical model and ontology (Phase 5, in progress)
+## Reconciliation (Phase 7, in progress)
+
+Migration `0012_reconciliation` adds versioned `reconciliation_runs`, evidence-backed `reconciliation_matches` and
+`reconciliation_discrepancies` (RLS-scoped). `internal/reconciliation` implements deterministic two-way header
+matching: invoice total vs linked PO totals, currency checks, split invoices across multiple POs, and explicit
+`no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. No model authority; runs are reproducible.
+
+## Canonical model and ontology (Phase 6, complete)
 
 Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,
 `invoice_lines`, `delivery_records`, `delivery_lines`, `invoice_po_links`, `source_entity_links`) plus
@@ -367,6 +374,7 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
 
 

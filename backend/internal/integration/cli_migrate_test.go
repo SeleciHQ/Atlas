@@ -41,13 +41,13 @@ func TestMigrateCLI(t *testing.T) {
 		return string(output)
 	}
 
-	if output := run("status"); !strings.Contains(output, "pending: 11") {
+	if output := run("status"); !strings.Contains(output, "pending: 12") {
 		t.Fatalf("status before up = %q", output)
 	}
-	if output := run("up"); !strings.Contains(output, "applied 11 migration(s)") {
+	if output := run("up"); !strings.Contains(output, "applied 12 migration(s)") {
 		t.Fatalf("up = %q", output)
 	}
-	if output := run("status"); !strings.Contains(output, "applied: 11") || !strings.Contains(output, "pending: 0") {
+	if output := run("status"); !strings.Contains(output, "applied: 12") || !strings.Contains(output, "pending: 0") {
 		t.Fatalf("status after up = %q", output)
 	}
 	if output := run("down", "-steps", "1"); !strings.Contains(output, "reverted 1 migration(s)") {
