@@ -17,7 +17,7 @@ worker/scheduler entrypoints, and the `0006_documents` upload/download lifecycle
 (`internal/storage`). A Python worker skeleton shows the result-only contract. Phase 3 is complete. Phase 4
 (in progress) adds the connector contract, registry, mock/document-inbox adapters, envelope-encrypted
 credentials, sync runs/cursors, and immutable source → normalized records with provenance. There are still
-**no business handlers**.
+**no business handlers**. Phase 5 (in progress) adds the canonical v0 schema, ontology v1 and org-scoped canonical services.
 
 ## Toolchain
 
@@ -214,7 +214,18 @@ server-chosen (`organization/document/version`); clients cannot choose keys.
 - `python/atlas_worker.py` is the Python worker skeleton: it claims `document.extract` jobs, writes only
   `job_results`, and never writes canonical tables.
 
-## Connectors and ingestion (Phase 4, in progress)
+## Canonical model and ontology (Phase 5, in progress)
+
+Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,
+`invoice_lines`, `delivery_records`, `delivery_lines`, `invoice_po_links`, `source_entity_links`) plus
+`ontology_versions` v1. Money is `bigint` minor units + 3-letter ISO currency; quantities are
+`numeric(18,6)`; business numbers are unique per organization; invoice?PO is explicitly many-to-many.
+`internal/canonical` provides org-scoped writes (`CreateSupplier`, `CreatePurchaseOrder`, `CreateInvoice`,
+`LinkInvoicePO`), evidence-backed `LinkSource` (method, confidence, evidence) and counts/ontology access.
+Every canonical table is RLS-scoped. Remaining Phase 5 work: line-level writes, canonical projection from
+normalized records, UI read models, and the fixture corpus.
+
+## Connectors and ingestion (Phase 4)
 
 Migration `0007_connectors` adds integration settings, `integration_credentials` (envelope-encrypted),
 `sync_runs`, `sync_cursors`, immutable `source_records` (raw payload as `bytea` + SHA-256), `normalized_records`
@@ -353,5 +364,6 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
 

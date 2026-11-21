@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS source_entity_links;
+DROP TABLE IF EXISTS invoice_po_links;
+DROP TABLE IF EXISTS delivery_lines;
+DROP TABLE IF EXISTS delivery_records;
+DROP TABLE IF EXISTS invoice_lines;
+DROP TABLE IF EXISTS invoices;
+DROP TABLE IF EXISTS po_lines;
+DROP TABLE IF EXISTS purchase_orders;
+DROP TABLE IF EXISTS suppliers;
+DROP TABLE IF EXISTS ontology_versions;
