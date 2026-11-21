@@ -37,9 +37,10 @@ Where the prototype and the target differ, the difference is stated explicitly r
 ## 2. Architecture overview
 
 Atlas is an **open, agent-native operating layer**. It sits between an organization's existing systems and
-the AI agents the organization chooses to use. External agents reason, plan and decide. Atlas understands
-company data, establishes relationships, produces factual reconciliation results, enforces policy, and
-executes only permitted operations.
+the AI agents the organization chooses to use. **Atlas does not build, host or provide agents**: customer
+organizations connect their own agents to Atlas's governed interfaces (MCP and REST). External agents reason,
+plan and decide. Atlas understands company data, establishes relationships, produces factual reconciliation
+results, enforces policy, and executes only permitted operations.
 
 The v0 system is a **modular monolith** written primarily in Go, with a small Python processing runtime for
 document extraction. It exposes two interfaces over the same application services:

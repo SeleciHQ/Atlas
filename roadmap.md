@@ -661,7 +661,7 @@ dispatch. `cmd/atlas-worker` and `cmd/atlas-scheduler` are implemented. Migratio
 documents and immutable versions; `internal/storage` provides local and S3/R2 adapters; the authorized
 upload/finalize/download lifecycle is live under `/v1/documents`; `python/atlas_worker.py` is the result-only
 Python skeleton. Tests cover lifecycle/idempotency, concurrent claims, lease recovery, outbox atomicity, and
-document upload/integrity/quarantine. Remaining follow-ups (not blockers): contract tests against a real R2
+document upload/integrity/quarantine. Handling later: contract tests against a real R2
 bucket, queue metrics/trace propagation, and per-type lease/retry defaults documentation.
 
 ---
@@ -739,15 +739,17 @@ a shared connector contract, without touching canonical business logic.
   Phase 1 and keep key management out of domain code.
 - Risk: provider rate-limit behaviour unknown. Mitigation: framework-level backoff and observable metrics.
 
-**Implementation status (2026-11-21, in progress):** migration `0007_connectors` and the core ingestion path are
-implemented: `internal/connectors` (contract + registry + deterministic mock + document-inbox adapter),
+**Implementation status (2026-11-21, complete; under review):** migration `0007_connectors` and the core ingestion
+path are implemented: `internal/connectors` (contract + registry + deterministic mock + document-inbox adapter),
 envelope-encrypted credentials (`internal/secrets`), `internal/ingestion` (validated sync, idempotent raw source
 records with SHA-256, versioned normalization `mock-v1`, provenance, cursors, sync runs, health), and the
-worker's `connector.sync` handler. Tests cover audit of the mock fixtures, pagination/empty pages, sync
-idempotency (repeat sync writes zero duplicates), cursor advancement, raw-payload checksum preservation,
-encrypted credential storage, and connector unit tests. **Remaining:** integration/credential HTTP endpoints,
-webhook receiving with signature/dedupe/timestamp checks, document-inbox ingestion wiring, recorded-fixture
-contract tests for 429/5xx/token refresh, and the connector-import boundary check.
+worker's `connector.sync` handler. Management endpoints (`/v1/integrations`, credentials, sync trigger), webhook
+receiving (HMAC signature, 5-minute timestamp window, dedupe by event id, raw persistence, targeted sync),
+document-inbox ingestion on finalize, mock fixtures for 429/5xx and credential validation, and the connector
+boundary test are implemented. Tests cover pagination/empty pages, sync idempotency (repeat syncs write zero
+duplicates), cursor advancement, raw-payload checksum preservation, encrypted credential storage, webhook
+verification/dedupe, and the import boundary. **Handling later:** provider-specific rate-limit retry and
+token-refresh orchestration against real systems.
 
 ---
 
@@ -1062,6 +1064,7 @@ that cannot be bypassed.
 
 **Objective:** External agents connect over MCP, discover Atlas capabilities, obtain Atlas-produced
 reconciliation results and request governed actions; the web client consumes the same services over REST.
+Atlas does not build, host or provide agents: each customer connects its own agents to these interfaces.
 
 **Prerequisites:** Phases 7 and 8 accepted.
 
@@ -1272,5 +1275,6 @@ When a phase ends, report exactly this:
 | 8 | ADR-003 (write-back target) | No — mock write path |
 | 9 | ADR-002, ADR-004 (production tokens), ADR-009 (matrix) | ADR-009 validated |
 | 10 | ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-010 | Yes — all finalized |
+
 
 

@@ -234,7 +234,7 @@ Migration `0007_connectors` adds integration settings, `integration_credentials`
 - Management endpoints: `POST/GET /v1/integrations`, credentials, `/sync` (enqueues `connector.sync`), plus
   `POST /v1/webhooks/{organization}/{integration}` (HMAC-SHA256 over `timestamp.body`, 5-minute window, dedupe
   by event id, raw persistence, targeted sync). Finalizing a document records it through the document-inbox
-  pipeline. Follow-up: provider-specific rate-limit retry/token-refresh orchestration.
+  pipeline. Handling later: provider-specific rate-limit retry/token-refresh orchestration.
 
 ## Jobs, outbox and workers (Phase 3)
 
@@ -353,4 +353,5 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
