@@ -17,7 +17,7 @@ worker/scheduler entrypoints, and the `0006_documents` upload/download lifecycle
 (`internal/storage`). A Python worker skeleton shows the result-only contract. Phase 3 is complete. Phase 4
 (in progress) adds the connector contract, registry, mock/document-inbox adapters, envelope-encrypted
 credentials, sync runs/cursors, and immutable source → normalized records with provenance. There are still
-**no business handlers**. Phase 5 is complete (canonical v0 schema, ontology v1, read models, fixture corpus). Phase 6 (in progress) adds the extraction result contract, mock provider, validation gate, extraction drafts, and validated-draft promotion into canonical suppliers/invoices with evidence-backed source links.
+**no business handlers**. Phase 5 is complete (canonical v0 schema, ontology v1, read models, fixture corpus). Phase 6 (in progress) adds the extraction result contract, mock provider, validation gate, extraction drafts, and validated-draft promotion, the Python `document.extract` pipeline (scoped fetch + checksum), the Go `document.validate` gate, and evidence-backed canonical promotion.
 
 ## Toolchain
 
@@ -367,6 +367,7 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
 
 

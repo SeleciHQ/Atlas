@@ -16,6 +16,24 @@ type Promotion struct {
 	ReusedInvoice  bool   `json:"reused_invoice"`
 }
 
+// ValidateAndPromote applies the validation gate, persists the draft, and
+// promotes it only when validated. Rejected results are recorded without
+// canonical writes.
+func (s *Service) ValidateAndPromote(ctx context.Context, organizationID, documentID string, result Result) (*Draft, *Promotion, error) {
+	draft, err := s.Persist(ctx, organizationID, documentID, result)
+	if err != nil {
+		return nil, nil, err
+	}
+	if draft.Status != "validated" {
+		return draft, nil, nil
+	}
+	promotion, err := s.Promote(ctx, organizationID, draft.ID)
+	if err != nil {
+		return draft, nil, err
+	}
+	return draft, promotion, nil
+}
+
 // Promote turns a validated draft into canonical supplier/invoice rows with
 // evidence-backed source links. Resolution is exact-name only; ambiguity never
 // silently merges. Re-promotion is idempotent by invoice number.

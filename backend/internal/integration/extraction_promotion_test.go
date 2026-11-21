@@ -70,3 +70,24 @@ func TestExtractionPromotionIsIdempotent(t *testing.T) {
 		t.Fatal("rejected draft was promoted")
 	}
 }
+
+func TestValidateAndPromoteGate(t *testing.T) {
+	admin, app, _ := setupTenantSchema(t)
+	organizationID := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	var documentID string
+	if err := admin.QueryRow(ctx, `INSERT INTO documents (organization_id, kind, status) VALUES ($1, 'invoice', 'pending_upload') RETURNING id`, organizationID).Scan(&documentID); err != nil {
+		t.Fatalf("insert document: %v", err)
+	}
+	service := extraction.NewService(app, 0.8)
+	low := extraction.MockProvider(documentID)
+	low.Confidence = 0.2
+	draft, promotion, err := service.ValidateAndPromote(ctx, organizationID, documentID, low)
+	if err != nil || draft.Status != "rejected" || promotion != nil {
+		t.Fatalf("rejected gate = %+v %+v %v", draft, promotion, err)
+	}
+	var suppliers int
+	if err := admin.QueryRow(ctx, `SELECT count(*) FROM suppliers`).Scan(&suppliers); err != nil || suppliers != 0 {
+		t.Fatalf("suppliers after rejection = %d, %v", suppliers, err)
+	}
+}

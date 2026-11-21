@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"atlas/internal/connectors"
+	"atlas/internal/extraction"
 	"atlas/internal/ingestion"
 	"atlas/internal/jobs"
 	"atlas/internal/platform/db"
@@ -57,10 +58,27 @@ func run() error {
 	defer pool.Close()
 	queue := jobs.NewQueue(pool)
 
+	extractionService := extraction.NewService(pool, 0.8)
 	handlers := map[string]handler{
 		"system.noop": func(context.Context, *jobs.Job) (json.RawMessage, error) {
 			return json.RawMessage(`{"ok":true}`), nil
 		},
+	}
+
+	handlers["document.validate"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
+		var request struct {
+			OrganizationID string            `json:"organization_id"`
+			DocumentID     string            `json:"document_id"`
+			Result         extraction.Result `json:"result"`
+		}
+		if err := json.Unmarshal(job.Payload, &request); err != nil {
+			return nil, fmt.Errorf("decode extraction result: %w", err)
+		}
+		draft, promotion, err := extractionService.ValidateAndPromote(ctx, request.OrganizationID, request.DocumentID, request.Result)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"draft": draft, "promotion": promotion})
 	}
 
 	if rawKey := os.Getenv("ATLAS_SECRET_KEY"); rawKey != "" {

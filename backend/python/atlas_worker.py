@@ -11,11 +11,13 @@ Run:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
 import sys
 import time
+import urllib.request
 
 try:
     import psycopg
@@ -31,12 +33,33 @@ def _handle_signal(signum, _frame):
 
 
 def extract(job: dict) -> dict:
-    """Placeholder for document.extract. Replace with a real extractor."""
+    """Deterministic document.extract skeleton.
+
+    The payload carries the document metadata and a short-lived presigned
+    download URL issued by the Go API after authorization. The worker reads the
+    bytes, verifies the SHA-256 when supplied, runs its provider, and returns a
+    schema_version 1 result. It never writes canonical tables.
+    """
+    payload = job.get("payload") or {}
+    document_id = payload.get("document_id", job["id"])
+    if payload.get("download_url"):
+        with urllib.request.urlopen(payload["download_url"], timeout=30) as response:
+            data = response.read()
+        expected = payload.get("sha256", "")
+        if expected and hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError("document checksum mismatch")
     return {
         "schema_version": 1,
-        "job_id": job["id"],
-        "status": "not_implemented",
-        "message": "Python extraction handler skeleton; no canonical writes performed.",
+        "provider": "python-mock",
+        "document_id": document_id,
+        "supplier_name": "Python Mock Supplier",
+        "invoice_number": f"INV-{document_id[:8].upper()}",
+        "currency": "EUR",
+        "total_minor": 12000,
+        "confidence": 0.95,
+        "lines": [{"description": "Extracted line", "quantity": "1.000000",
+                   "unit_price_minor": 12000, "currency": "EUR", "confidence": 0.95}],
+        "warnings": [],
     }
 
 
@@ -128,3 +151,4 @@ def _fail(connection, job: dict, message: str, retryable: bool) -> None:
 
 if __name__ == "__main__":
     run()
+
