@@ -63,6 +63,9 @@ func (s *Service) CreateSupplier(ctx context.Context, organizationID, name, curr
 	if err := validateCurrency(currency); err != nil {
 		return nil, err
 	}
+	if err := s.ensureOntology(ctx); err != nil {
+		return nil, err
+	}
 	supplier := &Supplier{Name: name, Currency: currency}
 	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
@@ -78,6 +81,9 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, organizationID, suppl
 		return nil, fmt.Errorf("purchase order requires a number and non-negative total")
 	}
 	if err := validateCurrency(currency); err != nil {
+		return nil, err
+	}
+	if err := s.ensureOntology(ctx); err != nil {
 		return nil, err
 	}
 	order := &PurchaseOrder{SupplierID: supplierID, Number: number, Currency: currency, TotalMinor: totalMinor}
@@ -96,6 +102,9 @@ func (s *Service) CreateInvoice(ctx context.Context, organizationID, supplierID,
 		return nil, fmt.Errorf("invoice requires a number and non-negative total")
 	}
 	if err := validateCurrency(currency); err != nil {
+		return nil, err
+	}
+	if err := s.ensureOntology(ctx); err != nil {
 		return nil, err
 	}
 	invoice := &Invoice{SupplierID: supplierID, Number: number, Currency: currency, TotalMinor: totalMinor}
