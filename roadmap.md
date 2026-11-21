@@ -45,7 +45,7 @@ Status values: **Not started**, **In progress**, **Blocked**, **Under review**, 
 | 0 | Repository assessment and planning | None | Completed | Existing work understood and preserved; boundaries and ADRs documented |
 | 1 | Backend foundation | Phase 0 | Completed | Go service, Chi, pgx/sqlc, migrations, config, health, tests all work |
 | 2 | Identity, tenancy and security foundation | Phase 1 | Completed | Four principal classes; trusted org context; RLS; cross-tenant access rejected; WorkOS AuthKit E2E passed |
-| 3 | Storage and asynchronous processing | Phase 2 | Not started | Secure document storage; durable, retryable, idempotent job execution |
+| 3 | Storage and asynchronous processing | Phase 2 | In progress | Secure document storage; durable, retryable, idempotent job execution |
 | 4 | Connector framework and ingestion | Phase 3 | Not started | Source records ingested with lineage; connectors isolated from canonical logic |
 | 5 | Canonical data model and ontology | Phase 4 | Not started | Canonical entities, many-to-many relationships and source links verified |
 | 6 | Document extraction and entity resolution | Phases 4–5 | Not started | Validated extraction; evidence-backed entity links; no silent merges |
@@ -651,6 +651,16 @@ execution.
 - Risk: local storage adapter diverging from R2 behaviour. Mitigation: contract tests run against both where
   possible.
 - ADR-007 (retention) affects document lifecycle but not this phase's mechanics.
+
+**Implementation status (2026-11-21):** queue/outbox half complete. Migration `0005_jobs_outbox` adds `jobs`,
+`job_attempts`, `job_results` and `outbox_events` with RLS, lease/claim support via
+`atlas_claim_job`/`atlas_reap_expired_leases`/`atlas_claim_outbox` security-definer functions. `internal/jobs`
+implements transactional enqueue with idempotency keys, leased claims (`FOR UPDATE SKIP LOCKED`), completion
+and results, retry backoff with jitter, dead-letter/requeue, lease reaping and outbox dispatch.
+`cmd/atlas-worker` and `cmd/atlas-scheduler` are implemented (`system.noop` handler; scheduler dispatches the
+outbox and reaps leases). Tests cover lifecycle, concurrent claims, lease recovery and outbox atomicity.
+**Remaining:** object-storage abstraction (R2 + local adapter), document schema/lifecycle endpoints, and the
+Python worker skeleton; Phase 3 stays **In progress** until those land and are reviewed.
 
 ---
 

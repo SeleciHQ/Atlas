@@ -130,3 +130,8 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM atlas_worker;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM atlas_auth;
 GRANT EXECUTE ON FUNCTION atlas_list_members() TO atlas_app;
 GRANT EXECUTE ON FUNCTION atlas_memberships_for_user(uuid) TO atlas_auth;
+-- Queue functions are the worker's cross-organization entry points. They are
+-- the only way to claim jobs/outbox rows without an organization context.
+GRANT EXECUTE ON FUNCTION atlas_claim_job(text, integer) TO atlas_worker;
+GRANT EXECUTE ON FUNCTION atlas_reap_expired_leases() TO atlas_worker;
+GRANT EXECUTE ON FUNCTION atlas_claim_outbox(integer) TO atlas_worker;

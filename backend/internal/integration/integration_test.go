@@ -100,23 +100,23 @@ func TestMigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pending: %v", err)
 	}
-	if pending != 4 {
-		t.Fatalf("pending = %d, want 4", pending)
+	if pending != 5 {
+		t.Fatalf("pending = %d, want 5", pending)
 	}
 
 	applied, err := migrate.Up(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if applied != 4 {
-		t.Fatalf("applied = %d, want 4", applied)
+	if applied != 5 {
+		t.Fatalf("applied = %d, want 5", applied)
 	}
 
 	status, err := migrate.Status(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if len(status.Applied) != 4 || status.PendingCount != 0 || status.LatestApplied != "0004" {
+	if len(status.Applied) != 5 || status.PendingCount != 0 || status.LatestApplied != "0005" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 
@@ -128,12 +128,12 @@ func TestMigrationLifecycle(t *testing.T) {
 		t.Fatal("platform_metadata table was not created")
 	}
 
-	reverted, err := migrate.Down(ctx, pool, fsys, 1)
+	reverted, err := migrate.Down(ctx, pool, fsys, 2)
 	if err != nil {
 		t.Fatalf("down: %v", err)
 	}
-	if reverted != 1 {
-		t.Fatalf("reverted = %d, want 1", reverted)
+	if reverted != 2 {
+		t.Fatalf("reverted = %d, want 2", reverted)
 	}
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform_metadata') IS NOT NULL`).Scan(&tablePresent); err != nil {
 		t.Fatalf("table check after down: %v", err)
@@ -252,8 +252,8 @@ func TestHealthAndReadiness(t *testing.T) {
 
 	// A schema with an extra unapplied migration must fail readiness.
 	pendingFS := migrationsFS(t)
-	pendingFS["0005_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
-	pendingFS["0005_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0006_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0006_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
 	pendingRouter := httpapi.NewRouter(httpapi.Deps{
 		Logger: testLogger(), Pool: pool, Migrations: pendingFS,
 		ServiceName: "atlas-api", Version: "test",

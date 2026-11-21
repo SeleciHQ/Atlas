@@ -5,14 +5,16 @@ stays at the repository root; this directory contains only the production backen
 [`../architecture.md`](../architecture.md) for the architecture and [`../roadmap.md`](../roadmap.md) for the
 phase plan.
 
-**Current status: Phase 2 + Phase 2.1 (production authentication) complete (2026-11-21).** Phase 1 is
-complete. The Phase 2 security review verified the real provisioning SQL, separated identity/session database
-access from tenant runtime access, and reduced human roles to Admin and Member. Phase 2.1 adds the WorkOS
-AuthKit adapter (server-side authorization-code exchange), `oidc_identities` and organization invitations with
-the invitation/linking rules, and OIDC session issuance. The real WorkOS sandbox E2E passed on 2026-11-21
-(hosted sign-in → JIT user → admin membership → session), so ADR-002 is Accepted and the local
+**Current status: Phase 2 + Phase 2.1 complete (2026-11-21); Phase 3 in progress.** Phase 1 is complete. The
+Phase 2 security review verified the real provisioning SQL, separated identity/session database access from
+tenant runtime access, and reduced human roles to Admin and Member. Phase 2.1 adds the WorkOS AuthKit adapter
+(server-side authorization-code exchange), `oidc_identities` and organization invitations with the
+invitation/linking rules, and OIDC session issuance. The real WorkOS sandbox E2E passed on 2026-11-21 (hosted
+sign-in → JIT user → admin membership → session), so ADR-002 is Accepted and the local
 `OIDC_PRODUCTION_VERIFIED=true` gate is set; production deployment still needs production WorkOS credentials.
-There are still **no business handlers**.
+Phase 3 has delivered migration `0005_jobs_outbox`, the `internal/jobs` queue/outbox package, and the
+worker/scheduler entrypoints (document storage is the remaining Phase 3 deliverable). There are still **no
+business handlers**.
 
 ## Toolchain
 
@@ -40,10 +42,11 @@ cmd/atlas-api        REST API process
 cmd/atlas-migrate    migration CLI (up, down, status)
 cmd/atlas-provision  executes the role-provisioning SQL with passwords from the environment
 cmd/atlas-mcp        MCP server stub (Phase 9)
-cmd/atlas-worker     worker stub (Phase 3)
-cmd/atlas-scheduler  scheduler stub (Phase 3)
+cmd/atlas-worker     claims and executes jobs from the queue
+cmd/atlas-scheduler  dispatches outbox events and reaps expired leases
 internal/platform    config, logging, app errors, db pool, migrations, version
 internal/identity    principals, roles, sessions, dev auth interfaces
+internal/jobs        durable queue, leases, retries, dead-letter, outbox
 internal/authorization RBAC permission catalogue and service
 internal/orgs        organization-scoped read services
 internal/tenancy     organization context and RLS-bound transactions
@@ -187,10 +190,29 @@ Sessions are opaque 256-bit tokens; only a SHA-256 hash is stored. Logout revoke
 Expired, revoked or cross-organization sessions return `401`. Login and logout append audit events with actor
 attribution.
 
+## Jobs, outbox and workers (Phase 3, in progress)
+
+Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `outbox_events` (all RLS-scoped to
+`app.organization_id`). Execution semantics are **at-least-once**, so handlers must be idempotent using
+`idempotency_key` (unique per organization + type).
+
+- `internal/jobs.NewQueue(pool)` — transactional enqueue (`Enqueue`), atomic claim (`Claim`, via the
+  `atlas_claim_job` security-definer function using `FOR UPDATE SKIP LOCKED`), `Complete`, `Fail`
+  (capped exponential backoff with jitter, non-retryable → dead-letter), `ReapExpiredLeases`, `Requeue`, and
+  the outbox (`EnqueueEvent` in the business transaction, `Dispatch`).
+- Lease-expired jobs are reaped by `atlas_reap_expired_leases`; the abandoned attempt is recorded as
+  `lease_expired`. Outbox rows are claimed with `atlas_claim_outbox`; dedupe keys make retries harmless.
+- `cmd/atlas-worker` claims jobs, runs registered handlers (`system.noop` today) and records results.
+  `cmd/atlas-scheduler` dispatches outbox events to jobs and reaps leases.
+- Worker/scheduler env: `WORKER_DATABASE_URL` (fell back to `DATABASE_URL`), `WORKER_ID`, `JOB_LEASE_SECONDS`,
+  `JOB_POLL_MS`, `OUTBOX_POLL_MS`, `LEASE_REAP_MS`. Cross-organization queue access is only through the
+  security-definer functions granted to `atlas_worker`.
+
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
-`audit_events`) use PostgreSQL RLS keyed on `app.organization_id`, set per transaction by
+`audit_events`, `jobs`, `job_attempts`, `job_results`, `outbox_events`) use PostgreSQL RLS keyed on
+`app.organization_id`, set per transaction by
 `internal/tenancy`. `users` is a global identity record and `sessions` is read before an organization context
 exists; both remain intentionally **not** RLS-protected. They are protected by separated database roles and a
 narrow read function instead:
