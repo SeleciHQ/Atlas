@@ -4,12 +4,17 @@ import "testing"
 
 func TestProductionOIDCRequiresSandboxVerification(t *testing.T) {
 	base := map[string]string{
-		"DATABASE_URL":        "postgres://atlas:atlas@localhost:5432/atlas",
-		"AUTH_DATABASE_URL":   "postgres://atlas_auth:secret@localhost:5432/atlas",
-		"ATLAS_ENV":           "production",
-		"WORKOS_CLIENT_ID":    "client_test",
-		"WORKOS_API_KEY":      "sk_test",
-		"WORKOS_REDIRECT_URI": "https://atlas.example.com/v1/auth/oidc/callback",
+		"DATABASE_URL":         "postgres://atlas:atlas@localhost:5432/atlas",
+		"AUTH_DATABASE_URL":    "postgres://atlas_auth:secret@localhost:5432/atlas",
+		"ATLAS_ENV":            "production",
+		"WORKOS_CLIENT_ID":     "client_test",
+		"WORKOS_API_KEY":       "sk_test",
+		"WORKOS_REDIRECT_URI":  "https://atlas.example.com/v1/auth/oidc/callback",
+		"STORAGE_DRIVER":       "s3",
+		"R2_ENDPOINT":          "https://account.r2.cloudflarestorage.com",
+		"R2_BUCKET":            "atlas-documents",
+		"R2_ACCESS_KEY_ID":     "access",
+		"R2_SECRET_ACCESS_KEY": "secret",
 	}
 	cfg, err := LoadFrom(envFrom(base))
 	if err != nil {

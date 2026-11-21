@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"atlas/internal/authorization"
+	"atlas/internal/documents"
 	"atlas/internal/identity"
 	"atlas/internal/orgs"
 	"atlas/internal/platform/apperr"
@@ -31,6 +32,8 @@ type Deps struct {
 	OIDC           *identity.OIDCService
 	OIDCEnabled    bool
 	Invitations    *identity.InvitationService
+	Documents      *documents.Service
+	StorageHandler http.Handler
 	Authorizer     authorization.Service
 	Orgs           *orgs.Service
 	DevAuthEnabled bool
@@ -58,6 +61,9 @@ func NewRouter(deps Deps) http.Handler {
 			r.Get("/auth/oidc/start", oidcStartHandler(deps))
 			r.Get("/auth/oidc/callback", oidcCallbackHandler(deps))
 		}
+		if deps.StorageHandler != nil {
+			r.Handle("/storage/local/object", deps.StorageHandler)
+		}
 		r.Group(func(r chi.Router) {
 			r.Use(authenticate(deps))
 			r.Get("/auth/me", meHandler)
@@ -68,6 +74,14 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/organization/settings", organizationSettingsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionMembersManage)).
 				Post("/invitations", createInvitationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionDocumentsWrite)).
+				Post("/documents", createDocumentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionDocumentsWrite)).
+				Post("/documents/{documentID}/finalize", finalizeDocumentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionDocumentsRead)).
+				Get("/documents/{documentID}", getDocumentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionDocumentsRead)).
+				Get("/documents/{documentID}/download", downloadDocumentHandler(deps))
 		})
 	})
 

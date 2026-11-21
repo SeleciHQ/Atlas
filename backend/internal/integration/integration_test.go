@@ -100,23 +100,23 @@ func TestMigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pending: %v", err)
 	}
-	if pending != 5 {
-		t.Fatalf("pending = %d, want 5", pending)
+	if pending != 6 {
+		t.Fatalf("pending = %d, want 6", pending)
 	}
 
 	applied, err := migrate.Up(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if applied != 5 {
-		t.Fatalf("applied = %d, want 5", applied)
+	if applied != 6 {
+		t.Fatalf("applied = %d, want 6", applied)
 	}
 
 	status, err := migrate.Status(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if len(status.Applied) != 5 || status.PendingCount != 0 || status.LatestApplied != "0005" {
+	if len(status.Applied) != 6 || status.PendingCount != 0 || status.LatestApplied != "0006" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 
@@ -128,12 +128,12 @@ func TestMigrationLifecycle(t *testing.T) {
 		t.Fatal("platform_metadata table was not created")
 	}
 
-	reverted, err := migrate.Down(ctx, pool, fsys, 2)
+	reverted, err := migrate.Down(ctx, pool, fsys, 3)
 	if err != nil {
 		t.Fatalf("down: %v", err)
 	}
-	if reverted != 2 {
-		t.Fatalf("reverted = %d, want 2", reverted)
+	if reverted != 3 {
+		t.Fatalf("reverted = %d, want 3", reverted)
 	}
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform_metadata') IS NOT NULL`).Scan(&tablePresent); err != nil {
 		t.Fatalf("table check after down: %v", err)
@@ -168,6 +168,19 @@ func TestMigrationLifecycle(t *testing.T) {
 	}
 	if membershipsFunctionPresent {
 		t.Fatal("atlas_memberships_for_user should be removed by the 0004 down migration")
+	}
+	var jobsPresent, documentsPresent bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('jobs') IS NOT NULL`).Scan(&jobsPresent); err != nil {
+		t.Fatalf("jobs check after down: %v", err)
+	}
+	if jobsPresent {
+		t.Fatal("jobs should be removed by the 0005 down migration")
+	}
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('documents') IS NOT NULL`).Scan(&documentsPresent); err != nil {
+		t.Fatalf("documents check after down: %v", err)
+	}
+	if documentsPresent {
+		t.Fatal("documents should be removed by the 0006 down migration")
 	}
 
 	if _, err := migrate.Up(ctx, pool, fsys); err != nil {
@@ -252,8 +265,8 @@ func TestHealthAndReadiness(t *testing.T) {
 
 	// A schema with an extra unapplied migration must fail readiness.
 	pendingFS := migrationsFS(t)
-	pendingFS["0006_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
-	pendingFS["0006_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0007_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0007_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
 	pendingRouter := httpapi.NewRouter(httpapi.Deps{
 		Logger: testLogger(), Pool: pool, Migrations: pendingFS,
 		ServiceName: "atlas-api", Version: "test",

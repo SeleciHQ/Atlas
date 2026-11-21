@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"atlas/internal/authorization"
+	"atlas/internal/documents"
 	"atlas/internal/httpapi"
 	"atlas/internal/identity"
 	"atlas/internal/orgs"
@@ -20,6 +21,7 @@ import (
 	"atlas/internal/platform/db"
 	"atlas/internal/platform/logging"
 	"atlas/internal/platform/migrate"
+	"atlas/internal/storage"
 )
 
 func main() {
@@ -98,6 +100,36 @@ func run() error {
 		logger.Info("managed_oidc_enabled", "provider", "workos")
 	}
 
+	// Object storage: local filesystem in development; S3-compatible R2 in
+	// staging/production.
+	var store storage.Store
+	var storageHandler http.Handler
+	switch cfg.StorageDriver {
+	case "s3":
+		s3Store, err := storage.NewS3(storage.S3Config{
+			Endpoint: cfg.R2Endpoint, Region: cfg.R2Region, Bucket: cfg.R2Bucket,
+			AccessKeyID: cfg.R2AccessKeyID, SecretAccessKey: cfg.R2SecretAccessKey,
+		})
+		if err != nil {
+			return fmt.Errorf("configure s3 storage: %w", err)
+		}
+		store = s3Store
+		logger.Info("object_storage_enabled", "driver", "s3")
+	default:
+		if err := os.MkdirAll(cfg.StorageLocalDir, 0o750); err != nil {
+			return fmt.Errorf("create local storage directory: %w", err)
+		}
+		baseURL := cfg.StoragePublicBaseURL
+		if baseURL == "" {
+			baseURL = "http://localhost" + cfg.HTTPAddr
+		}
+		local := storage.NewLocal(cfg.StorageLocalDir, []byte(cfg.StorageLocalSecret), baseURL)
+		store = local
+		storageHandler = local
+		logger.Info("object_storage_enabled", "driver", "local", "dir", cfg.StorageLocalDir)
+	}
+	documentsService := documents.NewService(pool, store)
+
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger:         logger,
 		Pool:           pool,
@@ -109,6 +141,8 @@ func run() error {
 		OIDC:           oidcService,
 		OIDCEnabled:    cfg.OIDCEnabled,
 		Invitations:    invitations,
+		Documents:      documentsService,
+		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),
 		DevAuthEnabled: cfg.DevAuthEnabled,

@@ -12,9 +12,10 @@ tenant runtime access, and reduced human roles to Admin and Member. Phase 2.1 ad
 invitation/linking rules, and OIDC session issuance. The real WorkOS sandbox E2E passed on 2026-11-21 (hosted
 sign-in → JIT user → admin membership → session), so ADR-002 is Accepted and the local
 `OIDC_PRODUCTION_VERIFIED=true` gate is set; production deployment still needs production WorkOS credentials.
-Phase 3 has delivered migration `0005_jobs_outbox`, the `internal/jobs` queue/outbox package, and the
-worker/scheduler entrypoints (document storage is the remaining Phase 3 deliverable). There are still **no
-business handlers**.
+Phase 3 has delivered migration `0005_jobs_outbox`, the `internal/jobs` queue/outbox package, the
+worker/scheduler entrypoints, and the `0006_documents` upload/download lifecycle with local and R2 adapters
+(`internal/storage`). A Python worker skeleton shows the result-only contract. Phase 3 is under review. There
+are still **no business handlers**.
 
 ## Toolchain
 
@@ -190,7 +191,28 @@ Sessions are opaque 256-bit tokens; only a SHA-256 hash is stored. Logout revoke
 Expired, revoked or cross-organization sessions return `401`. Login and logout append audit events with actor
 attribution.
 
-## Jobs, outbox and workers (Phase 3, in progress)
+## Documents and object storage (Phase 3)
+
+Migration `0006_documents` adds `documents` and immutable `document_versions` (RLS-scoped). Keys are
+server-chosen (`organization/document/version`); clients cannot choose keys.
+
+- `POST /v1/documents` (`documents:write`) — validates kind, content type (`application/pdf`, PNG, JPEG, TIFF,
+  CSV), size (≤ 25 MiB) and lowercase hex SHA-256, creates a `pending_upload` document/version, and returns a
+  short-lived presigned PUT.
+- `POST /v1/documents/{id}/finalize` (`documents:write`) — heads the object, verifies size and SHA-256, then
+  transitions to `available`; any mismatch (or missing checksum) quarantines the document.
+- `GET /v1/documents/{id}` (`documents:read`) — current version metadata.
+- `GET /v1/documents/{id}/download` (`documents:read`) — short-lived presigned GET for available documents.
+- `internal/storage` provides the `Store` interface: `Local` (filesystem + HMAC-signed PUT/GET served at
+  `/v1/storage/local/object`, development/tests) and `S3` (Cloudflare R2 via the AWS SDK presigner; enforced
+  content type and `x-amz-checksum-sha256`). Storage env: `STORAGE_DRIVER` (`local`|`s3`), `STORAGE_LOCAL_DIR`,
+  `STORAGE_LOCAL_SECRET`, `STORAGE_PUBLIC_BASE_URL`, `R2_ENDPOINT`, `R2_REGION`, `R2_BUCKET`,
+  `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Production serving requires `STORAGE_DRIVER=s3` and the R2
+  settings.
+- `python/atlas_worker.py` is the Python worker skeleton: it claims `document.extract` jobs, writes only
+  `job_results`, and never writes canonical tables.
+
+## Jobs, outbox and workers (Phase 3)
 
 Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `outbox_events` (all RLS-scoped to
 `app.organization_id`). Execution semantics are **at-least-once**, so handlers must be idempotent using
@@ -211,8 +233,8 @@ Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `out
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
-`audit_events`, `jobs`, `job_attempts`, `job_results`, `outbox_events`) use PostgreSQL RLS keyed on
-`app.organization_id`, set per transaction by
+`audit_events`, `documents`, `document_versions`, `jobs`, `job_attempts`, `job_results`, `outbox_events`) use
+PostgreSQL RLS keyed on `app.organization_id`, set per transaction by
 `internal/tenancy`. `users` is a global identity record and `sessions` is read before an organization context
 exists; both remain intentionally **not** RLS-protected. They are protected by separated database roles and a
 narrow read function instead:

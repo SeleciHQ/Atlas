@@ -38,6 +38,18 @@ type Config struct {
 	WorkOSAuthenticateURL  string
 	OIDCEnabled            bool
 	OIDCProductionVerified bool
+
+	// Object storage (Phase 3). Local is for development; production requires
+	// the S3-compatible R2 adapter.
+	StorageDriver        string
+	StorageLocalDir      string
+	StorageLocalSecret   string
+	StoragePublicBaseURL string
+	R2Endpoint           string
+	R2Region             string
+	R2Bucket             string
+	R2AccessKeyID        string
+	R2SecretAccessKey    string
 }
 
 const (
@@ -206,6 +218,28 @@ func LoadFrom(getenv func(string) string) (Config, error) {
 		cfg.OIDCProductionVerified = verified
 	}
 
+	cfg.StorageDriver = strings.ToLower(strings.TrimSpace(getenv("STORAGE_DRIVER")))
+	if cfg.StorageDriver == "" {
+		cfg.StorageDriver = "local"
+	}
+	if cfg.StorageDriver != "local" && cfg.StorageDriver != "s3" {
+		return Config{}, fmt.Errorf("invalid STORAGE_DRIVER %q: must be local or s3", cfg.StorageDriver)
+	}
+	cfg.StorageLocalDir = strings.TrimSpace(getenv("STORAGE_LOCAL_DIR"))
+	if cfg.StorageLocalDir == "" {
+		cfg.StorageLocalDir = ".atlas-storage"
+	}
+	cfg.StorageLocalSecret = strings.TrimSpace(getenv("STORAGE_LOCAL_SECRET"))
+	if cfg.StorageLocalSecret == "" && (cfg.Environment == "development" || cfg.Environment == "test") {
+		cfg.StorageLocalSecret = "atlas-development-storage-secret"
+	}
+	cfg.StoragePublicBaseURL = strings.TrimSpace(getenv("STORAGE_PUBLIC_BASE_URL"))
+	cfg.R2Endpoint = strings.TrimSpace(getenv("R2_ENDPOINT"))
+	cfg.R2Region = strings.TrimSpace(getenv("R2_REGION"))
+	cfg.R2Bucket = strings.TrimSpace(getenv("R2_BUCKET"))
+	cfg.R2AccessKeyID = strings.TrimSpace(getenv("R2_ACCESS_KEY_ID"))
+	cfg.R2SecretAccessKey = strings.TrimSpace(getenv("R2_SECRET_ACCESS_KEY"))
+
 	return cfg, nil
 }
 
@@ -236,6 +270,15 @@ func (c Config) ValidateServing() error {
 		if !c.OIDCProductionVerified {
 			return fmt.Errorf("production OIDC has not completed sandbox verification (set OIDC_PRODUCTION_VERIFIED=true only after the E2E passes)")
 		}
+		if c.StorageDriver != "s3" {
+			return fmt.Errorf("production storage must use the S3-compatible adapter (STORAGE_DRIVER=s3)")
+		}
+		if c.R2Endpoint == "" || c.R2Bucket == "" || c.R2AccessKeyID == "" || c.R2SecretAccessKey == "" {
+			return fmt.Errorf("production storage requires R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY")
+		}
+	}
+	if c.StorageDriver == "local" && c.StorageLocalSecret == "" {
+		return fmt.Errorf("local storage requires STORAGE_LOCAL_SECRET")
 	}
 	return nil
 }
