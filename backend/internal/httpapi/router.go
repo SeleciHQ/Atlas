@@ -1,0 +1,89 @@
+// Package httpapi wires Atlas's HTTP surface. Handlers stay thin: parsing,
+// authentication and authorization middleware will be added in Phase 2 before
+// any business handler exists.
+package httpapi
+
+import (
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"atlas/internal/authorization"
+	"atlas/internal/identity"
+	"atlas/internal/orgs"
+	"atlas/internal/platform/apperr"
+)
+
+// Deps are the dependencies required to build the HTTP router.
+type Deps struct {
+	Logger         *slog.Logger
+	Pool           *pgxpool.Pool
+	Migrations     fs.FS
+	ServiceName    string
+	Version        string
+	Identity       identity.Authenticator
+	DevSessions    identity.DevSessionIssuer
+	OIDC           *identity.OIDCService
+	OIDCEnabled    bool
+	Invitations    *identity.InvitationService
+	Authorizer     authorization.Service
+	Orgs           *orgs.Service
+	DevAuthEnabled bool
+	SecureCookies  bool
+}
+
+// NewRouter builds the Atlas HTTP router.
+func NewRouter(deps Deps) http.Handler {
+	r := chi.NewRouter()
+	r.Use(
+		middleware.RequestID,
+		middleware.RealIP,
+		observe(deps.Logger),
+		middleware.Timeout(30*time.Second),
+	)
+
+	r.Get("/healthz", healthHandler(deps))
+	r.Get("/readyz", readinessHandler(deps))
+
+	r.Route("/v1", func(r chi.Router) {
+		if deps.DevAuthEnabled && deps.DevSessions != nil {
+			r.Post("/auth/dev-login", devLoginHandler(deps))
+		}
+		if deps.OIDCEnabled && deps.OIDC != nil {
+			r.Get("/auth/oidc/start", oidcStartHandler(deps))
+			r.Get("/auth/oidc/callback", oidcCallbackHandler(deps))
+		}
+		r.Group(func(r chi.Router) {
+			r.Use(authenticate(deps))
+			r.Get("/auth/me", meHandler)
+			r.Post("/auth/logout", logoutHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionMembersRead)).
+				Get("/members", membersHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
+				Get("/organization/settings", organizationSettingsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionMembersManage)).
+				Post("/invitations", createInvitationHandler(deps))
+		})
+	})
+
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		WriteError(w, r, deps.Logger, apperr.New(apperr.KindNotFound, "not_found", "The requested resource was not found."))
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		WriteProblem(w, apperr.Problem{
+			Type:      "about:blank",
+			Title:     "Method Not Allowed",
+			Status:    http.StatusMethodNotAllowed,
+			Code:      "method_not_allowed",
+			Detail:    "The HTTP method is not allowed for this resource.",
+			RequestID: middleware.GetReqID(r.Context()),
+		})
+	})
+
+	return r
+}

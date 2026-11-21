@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------------
+
+model User {
+  id   String @id @default(cuid())
+  name String
+  email String @unique
+  role String // FINANCE_OPS | CONTROLLER | AGENT
+
+  resolutions Resolution[]
+  approvals   Approval[]   @relation("decidedBy")
+}
+
+// ---------------------------------------------------------------------------
+// Supply chain objects
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id     String @id @default(cuid())
+  code   String @unique // SUP-001
+  name   String
+  country String
+  status String // ACTIVE | ON_HOLD | PROBATION
+  contactEmail String
+  notes  String?
+
+  purchaseOrders PurchaseOrder[]
+  shipments      Shipment[]
+  invoices       Invoice[]
+  cases          Case[]
+  documents      Document[]
+}
+
+model PurchaseOrder {
+  id         String @id @default(cuid())
+  number     String @unique // PO-2291
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  status     String // OPEN | CLOSED | CANCELLED
+  currency   String
+  totalAmount Float
+  issuedAt   DateTime
+  expectedDeliveryAt DateTime
+
+  lines     PurchaseOrderLine[]
+  shipments Shipment[]
+  invoices  Invoice[]
+}
+
+model PurchaseOrderLine {
+  id       String @id @default(cuid())
+  poId     String
+  po       PurchaseOrder @relation(fields: [poId], references: [id])
+  lineNo   Int
+  item     String
+  sku      String
+  quantity Float
+  unitPrice Float
+}
+
+model Shipment {
+  id         String @id @default(cuid())
+  reference  String @unique // SHP-4417
+  poId       String
+  po         PurchaseOrder @relation(fields: [poId], references: [id])
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  status     String // IN_TRANSIT | DELIVERED | PARTIAL | MISSING
+  carrier    String
+  shippedAt  DateTime?
+
+  deliveryEvents DeliveryEvent[]
+}
+
+model DeliveryEvent {
+  id         String @id @default(cuid())
+  reference  String @unique // GRN-882
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  type       String // DELIVERY | PARTIAL_DELIVERY | MISSING
+  deliveredAt DateTime?
+  hasPhoto   Boolean @default(false)
+  photoNote  String?
+  receivedNote String?
+
+  lines DeliveryEventLine[]
+}
+
+model DeliveryEventLine {
+  id            String @id @default(cuid())
+  deliveryEventId String
+  deliveryEvent DeliveryEvent @relation(fields: [deliveryEventId], references: [id])
+  lineNo        Int
+  item          String
+  quantity      Float
+}
+
+// ---------------------------------------------------------------------------
+// Invoices & cases
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id          String @id @default(cuid())
+  number      String @unique // INV-4821
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  poId        String?
+  po          PurchaseOrder? @relation(fields: [poId], references: [id])
+  amount      Float
+  currency    String
+  invoiceDate DateTime
+  dueDate     DateTime?
+  status      String // RECEIVED | IN_REVIEW | WAITING_SUPPLIER | HELD | APPROVED | PAID | REJECTED
+  ocrStatus   String // COMPLETE | FAILED | PENDING
+  duplicateOf String?
+  taxDocMissing Boolean @default(false)
+  erpStatus   String? // NOT_POSTED | POSTED | PAYMENT_RELEASED | BLOCKED
+
+  lines      InvoiceLine[]
+  case       Case?
+  documents  Document[]
+}
+
+model InvoiceLine {
+  id        String @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  lineNo    Int
+  item      String
+  invoicedQuantity Float
+  unitPrice Float
+  lineTotal Float
+}
+
+model Case {
+  id         String @id @default(cuid())
+  invoiceId  String @unique
+  invoice    Invoice @relation(fields: [invoiceId], references: [id])
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+  status     String // OPEN | WAITING_SUPPLIER | READY_FOR_APPROVAL | ESCALATED | RESOLVED
+  exceptionType String // QUANTITY_MISMATCH | PRICE_VARIANCE | MISSING_DELIVERY | DUPLICATE_INVOICE | LATE_DELIVERY | MISSING_TAX_DOC | UNAPPROVED | PARTIAL_DELIVERY
+  title      String
+  summary    String
+  amount     Float
+  currency   String
+  highValue  Boolean @default(false)
+  escalated  Boolean @default(false)
+  createdAt  DateTime
+  updatedAt  DateTime
+  resolvedAt DateTime?
+
+  discrepancies Discrepancy[]
+  documents     Document[]
+  approvals     Approval[]
+  resolutions   Resolution[]
+  auditEvents   AuditEvent[]
+}
+
+model Discrepancy {
+  id        String @id @default(cuid())
+  reference String @unique // DIS-311
+  caseId    String
+  case      Case @relation(fields: [caseId], references: [id])
+  type      String
+  severity  String // LOW | MEDIUM | HIGH
+  description String
+  status    String // OPEN | RESOLVED
+}
+
+model Resolution {
+  id        String @id @default(cuid())
+  caseId    String
+  case      Case @relation(fields: [caseId], references: [id])
+  type      String // DOCUMENT_REQUESTED | HELD | ESCALATED | PAYMENT_RELEASED | INVOICE_REJECTED | CORRECTED_INVOICE_RECEIVED
+  note      String
+  actorId   String?
+  actor     User? @relation(fields: [actorId], references: [id])
+  createdAt DateTime
+}
+
+// ---------------------------------------------------------------------------
+// Approvals, policy, audit, documents
+// ---------------------------------------------------------------------------
+
+model Approval {
+  id          String @id @default(cuid())
+  reference   String @unique // APR-114
+  caseId      String
+  case        Case @relation(fields: [caseId], references: [id])
+  action      String // approve_payment
+  amount      Float
+  currency    String
+  status      String // PENDING | APPROVED | REJECTED | INFO_REQUESTED
+  rationale   String
+  requestedBy String
+  decidedById String?
+  decidedBy   User? @relation("decidedBy", fields: [decidedById], references: [id])
+  comment     String?
+  decidedAt   DateTime?
+  createdAt   DateTime
+}
+
+model Policy {
+  id      String @id @default(cuid())
+  key     String @unique
+  name    String
+  version String
+  config  String // JSON
+  active  Boolean @default(true)
+}
+
+model AuditEvent {
+  id         String @id @default(cuid())
+  actor      String
+  actorType  String // HUMAN | AGENT | SYSTEM
+  action     String
+  objectType String
+  objectId   String
+  caseId     String?
+  case       Case? @relation(fields: [caseId], references: [id])
+  inputs     String // JSON
+  outputs    String // JSON
+  policyVersion String
+  createdAt  DateTime
+}
+
+model Document {
+  id        String @id @default(cuid())
+  kind      String // INVOICE_PDF | PURCHASE_ORDER | DELIVERY_NOTE | DELIVERY_PHOTO | TAX_DOC | CORRECTED_INVOICE
+  name      String
+  caseId    String?
+  case      Case? @relation(fields: [caseId], references: [id])
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+  supplierId String?
+  supplier  Supplier? @relation(fields: [supplierId], references: [id])
+  poId      String?
+  shipmentId String?
+  extractedFields String? // JSON
+  createdAt DateTime
+}

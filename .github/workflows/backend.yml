@@ -1,0 +1,79 @@
+name: backend
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas -d atlas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd internal)"
+
+      - name: Vet
+        run: go vet ./cmd/... ./internal/...
+
+      - name: Verify sqlc generation is reproducible
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+          "$(go env GOPATH)/bin/sqlc" generate
+          git -C .. diff --exit-code -- backend/internal/platform/db/gen
+
+      - name: Build
+        run: go build ./cmd/... ./internal/...
+
+      - name: Apply migrations and execute provisioning SQL
+        env:
+          ATLAS_APP_PASSWORD: ci_app_password
+          ATLAS_AUTH_PASSWORD: ci_auth_password
+          ATLAS_MIGRATOR_PASSWORD: ci_migrator_password
+          ATLAS_WORKER_PASSWORD: ci_worker_password
+        run: |
+          go run ./cmd/atlas-migrate up
+          go run ./cmd/atlas-provision
+
+      - name: Test
+        run: go test ./cmd/... ./internal/... -count=1 -race

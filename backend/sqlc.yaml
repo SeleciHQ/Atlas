@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    # Phase 1 has a single baseline migration. As migrations grow, switch this to a
+    # consolidated schema file or a migrations directory understood by sqlc.
+    schema: "migrations/0001_platform_metadata.up.sql"
+    queries: "internal/platform/db/queries"
+    gen:
+      go:
+        package: "dbgen"
+        out: "internal/platform/db/gen"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_interface: false

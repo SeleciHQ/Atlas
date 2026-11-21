@@ -1,6 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+> **Repository note:** the Next.js application is the Atlas web client reference implementation (backed by
+> SQLite/Prisma demo data). The production backend is being built incrementally in Go as described in
+> [`architecture.md`](./architecture.md) and [`roadmap.md`](./roadmap.md). Phase 1 (backend foundation) is
+> implemented and under review; see "Backend (Go)" below.
+
+## Getting Started (web client)
 
 First, run the development server:
 
@@ -34,3 +39,19 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Backend (Go)
+
+The production backend lives in [`backend/`](backend/README.md) and is built incrementally as described in
+[`architecture.md`](architecture.md) and [`roadmap.md`](roadmap.md). Phase 1 (foundation) is complete; Phase 2
+(identity, tenancy and security) is under review because managed OIDC (provisionally WorkOS) is still pending ADR-002 sandbox credentials. The backend
+intentionally contains no business handlers yet.
+
+```bash
+cd backend
+go run ./cmd/atlas-migrate status   # DATABASE_URL required
+go run ./cmd/atlas-api
+```
+
+Toolchain requirements, environment variables, migration rules, the temporary sqlc configuration and test
+instructions are documented in [`backend/README.md`](backend/README.md).
