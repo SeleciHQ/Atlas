@@ -829,9 +829,9 @@ ontology versioning, many-to-many relationships and source traceability.
 **Implementation status (2026-11-21, in progress):** migration `0009_canonical` and ontology v1 are implemented
 with the core canonical tables, composite tenant keys, currency/money/quantity constraints, invoice?PO
 many-to-many links, and source-to-entity provenance links. `internal/canonical` provides org-scoped canonical
-writes and ontology access. Tests cover constraints, many-to-many links, traceability and RLS. Remaining:
-line-level canonical writes, projection from normalized records, UI read models, fixture corpus, and ontology
-validation hooks on every write.
+writes and ontology access. Tests cover constraints, many-to-many links, traceability and RLS. Line-level canonical writes, idempotent projection from normalized records with
+provenance, invoice read models and ontology checks on canonical writes are implemented. **Handling later:**
+the fixture corpus and broader ontology validation coverage.
 
 ---
 
@@ -1282,6 +1282,7 @@ When a phase ends, report exactly this:
 | 8 | ADR-003 (write-back target) | No — mock write path |
 | 9 | ADR-002, ADR-004 (production tokens), ADR-009 (matrix) | ADR-009 validated |
 | 10 | ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-010 | Yes — all finalized |
+
 
 
 

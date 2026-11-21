@@ -222,8 +222,9 @@ Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_
 `numeric(18,6)`; business numbers are unique per organization; invoice?PO is explicitly many-to-many.
 `internal/canonical` provides org-scoped writes (`CreateSupplier`, `CreatePurchaseOrder`, `CreateInvoice`,
 `LinkInvoicePO`), evidence-backed `LinkSource` (method, confidence, evidence) and counts/ontology access.
-Every canonical table is RLS-scoped. Remaining Phase 5 work: line-level writes, canonical projection from
-normalized records, UI read models, and the fixture corpus.
+Every canonical table is RLS-scoped and writes validate the active ontology. Line-level writes, idempotent
+projection from normalized records with provenance, and invoice read models (`GetInvoiceDetail`) are
+implemented. Handling later: fixture corpus and broader ontology validation coverage.
 
 ## Connectors and ingestion (Phase 4)
 
@@ -364,6 +365,7 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
 
 
