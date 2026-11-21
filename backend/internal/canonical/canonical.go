@@ -147,6 +147,34 @@ func (s *Service) LinkSource(ctx context.Context, organizationID, sourceRecordID
 	})
 }
 
+// FindSupplierByName returns the supplier id for an exact (case-insensitive) name.
+func (s *Service) FindSupplierByName(ctx context.Context, organizationID, name string) (string, error) {
+	var id string
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id FROM suppliers WHERE organization_id = $1 AND lower(name) = lower($2)`,
+			organizationID, name).Scan(&id)
+	})
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
+// FindInvoiceIDByNumber returns the invoice id for a business number.
+func (s *Service) FindInvoiceIDByNumber(ctx context.Context, organizationID, number string) (string, error) {
+	var id string
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id FROM invoices WHERE organization_id = $1 AND number = $2`,
+			organizationID, number).Scan(&id)
+	})
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
 // CountInvoicePOLinks returns the number of POs linked to an invoice.
 func (s *Service) CountInvoicePOLinks(ctx context.Context, organizationID, invoiceID string) (int, error) {
 	var count int
