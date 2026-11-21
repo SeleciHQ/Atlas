@@ -67,20 +67,11 @@ func (s *Service) Promote(ctx context.Context, organizationID, draftID string) (
 
 	canon := canonical.NewService(s.pool)
 	promotion := &Promotion{}
-	supplierID, err := canon.FindSupplierByName(ctx, organizationID, result.SupplierName)
+	supplierID, method, err := resolveSupplier(ctx, canon, organizationID, result)
 	if err != nil {
 		return nil, err
 	}
-	if supplierID != "" {
-		promotion.SupplierMethod = "exact-name"
-	} else {
-		supplier, err := canon.CreateSupplier(ctx, organizationID, result.SupplierName, result.Currency)
-		if err != nil {
-			return nil, fmt.Errorf("create supplier: %w", err)
-		}
-		supplierID = supplier.ID
-		promotion.SupplierMethod = "jit-create"
-	}
+	promotion.SupplierMethod = method
 	promotion.SupplierID = supplierID
 
 	invoiceID, err := canon.FindInvoiceIDByNumber(ctx, organizationID, result.InvoiceNumber)
@@ -126,4 +117,41 @@ func (s *Service) Promote(ctx context.Context, organizationID, draftID string) (
 		}
 	}
 	return promotion, nil
+}
+
+func resolveSupplier(ctx context.Context, canon *canonical.Service, organizationID string, result Result) (string, string, error) {
+	vatID, err := canon.FindSupplierByVAT(ctx, organizationID, result.SupplierVATID)
+	if err != nil {
+		return "", "", err
+	}
+	emailID, err := canon.FindSupplierByEmail(ctx, organizationID, result.SupplierEmail)
+	if err != nil {
+		return "", "", err
+	}
+	nameID, err := canon.FindSupplierByName(ctx, organizationID, result.SupplierName)
+	if err != nil {
+		return "", "", err
+	}
+	if vatID != "" && emailID != "" && vatID != emailID {
+		return "", "", fmt.Errorf("ambiguous supplier: VAT and email match different suppliers")
+	}
+	if vatID != "" && nameID != "" && vatID != nameID {
+		return "", "", fmt.Errorf("ambiguous supplier: VAT and name match different suppliers")
+	}
+	if emailID != "" && nameID != "" && emailID != nameID {
+		return "", "", fmt.Errorf("ambiguous supplier: email and name match different suppliers")
+	}
+	switch {
+	case vatID != "":
+		return vatID, "vat-exact", nil
+	case emailID != "":
+		return emailID, "email-exact", nil
+	case nameID != "":
+		return nameID, "exact-name", nil
+	}
+	supplier, err := canon.CreateSupplierWithIdentifiers(ctx, organizationID, result.SupplierName, result.Currency, result.SupplierEmail, result.SupplierVATID)
+	if err != nil {
+		return "", "", fmt.Errorf("create supplier: %w", err)
+	}
+	return supplier.ID, "jit-create", nil
 }

@@ -55,8 +55,14 @@ func validateCurrency(currency string) error {
 	return nil
 }
 
-// CreateSupplier inserts a canonical supplier.
+// CreateSupplier inserts a canonical supplier without identifiers.
 func (s *Service) CreateSupplier(ctx context.Context, organizationID, name, currency string) (*Supplier, error) {
+	return s.CreateSupplierWithIdentifiers(ctx, organizationID, name, currency, "", "")
+}
+
+// CreateSupplierWithIdentifiers inserts a supplier with optional email/VAT
+// evidence used for later candidate resolution.
+func (s *Service) CreateSupplierWithIdentifiers(ctx context.Context, organizationID, name, currency, email, vatID string) (*Supplier, error) {
 	if name == "" {
 		return nil, fmt.Errorf("supplier name is required")
 	}
@@ -69,8 +75,9 @@ func (s *Service) CreateSupplier(ctx context.Context, organizationID, name, curr
 	supplier := &Supplier{Name: name, Currency: currency}
 	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
-			INSERT INTO suppliers (organization_id, name, currency)
-			VALUES ($1, $2, $3) RETURNING id`, organizationID, name, currency).Scan(&supplier.ID)
+			INSERT INTO suppliers (organization_id, name, currency, email, vat_id)
+			VALUES ($1, $2, $3, nullif($4, ''), nullif($5, '')) RETURNING id`,
+			organizationID, name, currency, email, vatID).Scan(&supplier.ID)
 	})
 	return supplier, err
 }
@@ -154,6 +161,30 @@ func (s *Service) FindSupplierByName(ctx context.Context, organizationID, name s
 		return tx.QueryRow(ctx, `
 			SELECT id FROM suppliers WHERE organization_id = $1 AND lower(name) = lower($2)`,
 			organizationID, name).Scan(&id)
+	})
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
+// FindSupplierByEmail returns the supplier id for an exact email match.
+func (s *Service) FindSupplierByEmail(ctx context.Context, organizationID, email string) (string, error) {
+	return s.findSupplier(ctx, organizationID, `lower(email) = lower($2)`, email)
+}
+
+// FindSupplierByVAT returns the supplier id for an exact VAT match.
+func (s *Service) FindSupplierByVAT(ctx context.Context, organizationID, vatID string) (string, error) {
+	return s.findSupplier(ctx, organizationID, `vat_id = $2`, vatID)
+}
+
+func (s *Service) findSupplier(ctx context.Context, organizationID, predicate, value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	var id string
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT id FROM suppliers WHERE organization_id = $1 AND `+predicate, organizationID, value).Scan(&id)
 	})
 	if err == pgx.ErrNoRows {
 		return "", nil

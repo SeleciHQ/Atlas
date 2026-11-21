@@ -8,12 +8,15 @@
     "db:reset": "prisma migrate reset --force --skip-seed && prisma db seed",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "video:studio": "remotion studio video/index.tsx",
+    "video:render": "node video/generate-music.mjs && remotion render video/index.tsx AtlasDemo public/atlas-demo.mp4"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.6",
     "@prisma/adapter-better-sqlite3": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "@remotion/media": "4.0.545",
     "better-sqlite3": "^13.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -34,6 +37,7 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.545",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -42,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
     "prisma": "^7.10.1",
+    "remotion": "^4.0.545",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^5"

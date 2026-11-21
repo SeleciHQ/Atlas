@@ -20,6 +20,8 @@ type Result struct {
 	SchemaVersion int      `json:"schema_version"`
 	Provider      string   `json:"provider"`
 	SupplierName  string   `json:"supplier_name"`
+	SupplierEmail string   `json:"supplier_email"`
+	SupplierVATID string   `json:"supplier_vat_id"`
 	InvoiceNumber string   `json:"invoice_number"`
 	Currency      string   `json:"currency"`
 	TotalMinor    int64    `json:"total_minor"`

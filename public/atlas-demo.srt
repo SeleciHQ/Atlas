@@ -1,0 +1,47 @@
+1
+00:00:00,000 --> 00:00:03,000
+This is Atlas.
+
+2
+00:00:03,000 --> 00:00:08,000
+The work queue brings invoice exceptions
+that need review into one place.
+
+3
+00:00:08,000 --> 00:00:14,000
+INV-4821 from Kigali Metals is matched
+to PO-2291 and its delivery record.
+
+4
+00:00:14,000 --> 00:00:20,000
+100 steel rods are invoiced.
+GRN-882 records 80 received.
+
+5
+00:00:20,000 --> 00:00:27,000
+A 20-unit gap and 4% price variance
+exceed the 2% tolerance.
+
+6
+00:00:27,000 --> 00:00:34,000
+The demo agent proposes a payment hold
+and a corrected invoice.
+
+7
+00:00:34,000 --> 00:00:39,000
+Policy blocks payment until the quantity
+mismatch is resolved.
+
+8
+00:00:39,000 --> 00:00:47,000
+A document request is ready for review.
+Outbound actions are simulated.
+
+9
+00:00:47,000 --> 00:00:55,000
+The timeline links the recommendation,
+policy result, and action to the invoice.
+
+10
+00:00:55,000 --> 00:01:00,000
+Kubernetes for Enterprise Reality

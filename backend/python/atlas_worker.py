@@ -12,6 +12,7 @@ Run:
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import signal
@@ -42,12 +43,35 @@ def extract(job: dict) -> dict:
     """
     payload = job.get("payload") or {}
     document_id = payload.get("document_id", job["id"])
+    data = b""
     if payload.get("download_url"):
         with urllib.request.urlopen(payload["download_url"], timeout=30) as response:
             data = response.read()
         expected = payload.get("sha256", "")
         if expected and hashlib.sha256(data).hexdigest() != expected:
             raise ValueError("document checksum mismatch")
+
+    if os.environ.get("EXTRACTION_PROVIDER") == "http" and os.environ.get("EXTRACTION_ENDPOINT"):
+        request = urllib.request.Request(
+            os.environ["EXTRACTION_ENDPOINT"],
+            data=json.dumps({
+                "document_id": document_id,
+                "content_type": payload.get("content_type", ""),
+                "sha256": payload.get("sha256", ""),
+                "content_base64": base64.b64encode(data).decode("ascii"),
+            }).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + os.environ.get("EXTRACTION_API_KEY", ""),
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            result = json.loads(response.read())
+        if result.get("schema_version") != 1 or not result.get("supplier_name") or not result.get("invoice_number"):
+            raise ValueError("extraction provider returned an invalid result contract")
+        return result
+
     return {
         "schema_version": 1,
         "provider": "python-mock",
