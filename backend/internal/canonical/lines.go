@@ -120,12 +120,8 @@ func (s *Service) GetInvoiceDetail(ctx context.Context, organizationID, invoiceI
 }
 
 func (s *Service) ensureOntology(ctx context.Context) error {
-	var version int
-	if err := s.pool.QueryRow(ctx, `SELECT version FROM ontology_versions WHERE status = 'active'`).Scan(&version); err != nil {
-		return fmt.Errorf("load active ontology: %w", err)
-	}
-	if version != 1 {
-		return fmt.Errorf("unsupported active ontology version %d", version)
+	if err := s.ValidateOntology(ctx); err != nil {
+		return err
 	}
 	return nil
 }

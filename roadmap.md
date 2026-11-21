@@ -831,8 +831,8 @@ with the core canonical tables, composite tenant keys, currency/money/quantity c
 many-to-many links, and source-to-entity provenance links. `internal/canonical` provides org-scoped canonical
 writes and ontology access. Tests cover constraints, many-to-many links, traceability and RLS. Line-level canonical writes, idempotent projection from normalized records with
 provenance, invoice read models and ontology checks on canonical writes are implemented. **Handling later:**
-partial deliveries and PO/supplier read models are also implemented, with an ontology guard test.
-**Handling later:** the fixture corpus and broader ontology validation coverage.
+partial deliveries and PO/supplier read models are also implemented. The JSON fixture corpus (split invoices,
+partial deliveries) and fail-closed ontology validation are covered by tests. No remaining Phase 5 items.
 
 ---
 
@@ -1283,6 +1283,7 @@ When a phase ends, report exactly this:
 | 8 | ADR-003 (write-back target) | No — mock write path |
 | 9 | ADR-002, ADR-004 (production tokens), ADR-009 (matrix) | ADR-009 validated |
 | 10 | ADR-001, ADR-002, ADR-003, ADR-004, ADR-005, ADR-006, ADR-007, ADR-008, ADR-010 | Yes — all finalized |
+
 
 
 

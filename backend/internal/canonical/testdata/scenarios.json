@@ -1,0 +1,41 @@
+{
+  "scenarios": [
+    {
+      "name": "split_invoice_across_two_pos",
+      "supplier": {"name": "Corpus Supplier A", "currency": "EUR"},
+      "orders": [
+        {"number": "PO-X1", "total_minor": 10000, "currency": "EUR",
+         "lines": [{"line": 1, "description": "Widgets", "quantity": "1.000000", "unit": "piece", "unit_price_minor": 10000, "currency": "EUR"}]},
+        {"number": "PO-X2", "total_minor": 5000, "currency": "EUR",
+         "lines": [{"line": 1, "description": "Bolts", "quantity": "2.000000", "unit": "piece", "unit_price_minor": 2500, "currency": "EUR"}]}
+      ],
+      "invoices": [
+        {"number": "INV-X1", "total_minor": 15000, "currency": "EUR",
+         "lines": [{"line": 1, "description": "Consolidated", "quantity": "1.000000", "unit": "piece", "unit_price_minor": 15000, "currency": "EUR"}],
+         "po_numbers": ["PO-X1", "PO-X2"]}
+      ],
+      "deliveries": [],
+      "expect": {"invoice_po_links": 2, "fulfilled": ""}
+    },
+    {
+      "name": "partial_deliveries_against_one_po_line",
+      "supplier": {"name": "Corpus Supplier B", "currency": "EUR"},
+      "orders": [
+        {"number": "PO-Y1", "total_minor": 30000, "currency": "EUR",
+         "lines": [{"line": 1, "description": "Pallets", "quantity": "3.000000", "unit": "piece", "unit_price_minor": 10000, "currency": "EUR"}]}
+      ],
+      "invoices": [
+        {"number": "INV-Y1", "total_minor": 10000, "currency": "EUR",
+         "lines": [{"line": 1, "description": "Partial", "quantity": "1.000000", "unit": "piece", "unit_price_minor": 10000, "currency": "EUR"}],
+         "po_numbers": ["PO-Y1"]}
+      ],
+      "deliveries": [
+        {"number": "DN-Y1", "po_number": "PO-Y1", "delivered_on": "2026-11-01",
+         "lines": [{"po_number": "PO-Y1", "line": 1, "quantity": "1.500000"}]},
+        {"number": "DN-Y2", "po_number": "PO-Y1", "delivered_on": "2026-11-05",
+         "lines": [{"po_number": "PO-Y1", "line": 1, "quantity": "0.750000"}]}
+      ],
+      "expect": {"invoice_po_links": 1, "fulfilled": "2.250000"}
+    }
+  ]
+}
