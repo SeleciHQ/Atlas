@@ -18,6 +18,7 @@ import (
 	"atlas/internal/ingestion"
 	"atlas/internal/jobs"
 	"atlas/internal/platform/db"
+	"atlas/internal/reconciliation"
 	"atlas/internal/secrets"
 )
 
@@ -59,12 +60,27 @@ func run() error {
 	queue := jobs.NewQueue(pool)
 
 	extractionService := extraction.NewService(pool, 0.8)
+	reconciliationService := reconciliation.NewService(pool)
 	handlers := map[string]handler{
 		"system.noop": func(context.Context, *jobs.Job) (json.RawMessage, error) {
 			return json.RawMessage(`{"ok":true}`), nil
 		},
 	}
 
+	handlers["reconciliation.run"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
+		var request struct {
+			OrganizationID string `json:"organization_id"`
+			InvoiceID      string `json:"invoice_id"`
+		}
+		if err := json.Unmarshal(job.Payload, &request); err != nil {
+			return nil, fmt.Errorf("decode reconciliation payload: %w", err)
+		}
+		result, err := reconciliationService.Run(ctx, request.OrganizationID, request.InvoiceID)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(result)
+	}
 	handlers["document.validate"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
 		var request struct {
 			OrganizationID string            `json:"organization_id"`

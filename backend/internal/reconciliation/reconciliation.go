@@ -209,3 +209,87 @@ func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID
 	}
 	return int(matched.RowsAffected()), int(unmatched.RowsAffected() + shortfall.RowsAffected()), nil
 }
+
+// Match is one reconciliation match.
+type Match struct {
+	ID              string          `json:"id"`
+	MatchType       string          `json:"match_type"`
+	InvoiceID       string          `json:"invoice_id"`
+	PurchaseOrderID string          `json:"purchase_order_id"`
+	Confidence      string          `json:"confidence"`
+	Evidence        json.RawMessage `json:"evidence"`
+}
+
+// Discrepancy is one reconciliation finding.
+type Discrepancy struct {
+	ID          string          `json:"id"`
+	Kind        string          `json:"kind"`
+	Severity    string          `json:"severity"`
+	Description string          `json:"description"`
+	Evidence    json.RawMessage `json:"evidence"`
+}
+
+// RunDetail is the reconciliation read model.
+type RunDetail struct {
+	RunID         string          `json:"run_id"`
+	InvoiceID     string          `json:"invoice_id"`
+	Status        string          `json:"status"`
+	EngineVersion int             `json:"engine_version"`
+	Summary       json.RawMessage `json:"summary"`
+	Matches       []Match         `json:"matches"`
+	Discrepancies []Discrepancy   `json:"discrepancies"`
+}
+
+// GetRun returns a run with its matches and discrepancies.
+func (s *Service) GetRun(ctx context.Context, organizationID, runID string) (*RunDetail, error) {
+	detail := &RunDetail{Matches: []Match{}, Discrepancies: []Discrepancy{}}
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			SELECT id, invoice_id, status, engine_version, summary
+			FROM reconciliation_runs WHERE organization_id = $1 AND id = $2`,
+			organizationID, runID).Scan(&detail.RunID, &detail.InvoiceID, &detail.Status,
+			&detail.EngineVersion, &detail.Summary); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `
+			SELECT id, match_type, invoice_id, purchase_order_id, confidence::text, evidence
+			FROM reconciliation_matches WHERE organization_id = $1 AND run_id = $2 ORDER BY created_at`,
+			organizationID, runID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var match Match
+			if err := rows.Scan(&match.ID, &match.MatchType, &match.InvoiceID, &match.PurchaseOrderID,
+				&match.Confidence, &match.Evidence); err != nil {
+				return err
+			}
+			detail.Matches = append(detail.Matches, match)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		findings, err := tx.Query(ctx, `
+			SELECT id, kind, severity, description, evidence
+			FROM reconciliation_discrepancies WHERE organization_id = $1 AND run_id = $2 ORDER BY created_at`,
+			organizationID, runID)
+		if err != nil {
+			return err
+		}
+		defer findings.Close()
+		for findings.Next() {
+			var discrepancy Discrepancy
+			if err := findings.Scan(&discrepancy.ID, &discrepancy.Kind, &discrepancy.Severity,
+				&discrepancy.Description, &discrepancy.Evidence); err != nil {
+				return err
+			}
+			detail.Discrepancies = append(detail.Discrepancies, discrepancy)
+		}
+		return findings.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return detail, nil
+}

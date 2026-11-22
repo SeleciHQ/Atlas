@@ -24,6 +24,7 @@ import (
 	"atlas/internal/platform/db"
 	"atlas/internal/platform/logging"
 	"atlas/internal/platform/migrate"
+	"atlas/internal/reconciliation"
 	"atlas/internal/secrets"
 	"atlas/internal/storage"
 )
@@ -164,6 +165,7 @@ func run() error {
 		Documents:      documentsService,
 		Integrations:   integrationService,
 		Queue:          queue,
+		Reconciliation: reconciliation.NewService(pool),
 		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),

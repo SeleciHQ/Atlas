@@ -20,6 +20,7 @@ import (
 	"atlas/internal/jobs"
 	"atlas/internal/orgs"
 	"atlas/internal/platform/apperr"
+	"atlas/internal/reconciliation"
 )
 
 // Deps are the dependencies required to build the HTTP router.
@@ -37,6 +38,7 @@ type Deps struct {
 	Documents      *documents.Service
 	Integrations   *ingestion.Service
 	Queue          *jobs.Queue
+	Reconciliation *reconciliation.Service
 	StorageHandler http.Handler
 	Authorizer     authorization.Service
 	Orgs           *orgs.Service
@@ -91,10 +93,22 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/integrations", listIntegrationsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsRead)).
 				Get("/integrations/{integrationID}", getIntegrationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
+				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations", createIntegrationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
+				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/credentials", setIntegrationCredentialsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
+				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/sync", triggerIntegrationSyncHandler(deps))
 		})

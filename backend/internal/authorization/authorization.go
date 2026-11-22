@@ -19,6 +19,8 @@ const (
 	PermissionDocumentsWrite     Permission = "documents:write"
 	PermissionIntegrationsRead   Permission = "integrations:read"
 	PermissionIntegrationsWrite  Permission = "integrations:write"
+	PermissionReconciliationRead Permission = "reconciliation:read"
+	PermissionReconciliationRun  Permission = "reconciliation:run"
 	// Approval permissions may be granted explicitly to eligible members once
 	// approval workflows exist (Phase 8). They are deliberately not implied by
 	// a job title. There is intentionally no human actions.execute permission:
@@ -38,13 +40,16 @@ var rolePermissions = map[string]map[Permission]struct{}{
 		PermissionDocumentsWrite:     {},
 		PermissionIntegrationsRead:   {},
 		PermissionIntegrationsWrite:  {},
+		PermissionReconciliationRead: {},
+		PermissionReconciliationRun:  {},
 	},
 	identity.RoleMember: {
-		PermissionOrganizationRead: {},
-		PermissionMembersRead:      {},
-		PermissionDocumentsRead:    {},
-		PermissionDocumentsWrite:   {},
-		PermissionIntegrationsRead: {},
+		PermissionOrganizationRead:   {},
+		PermissionMembersRead:        {},
+		PermissionDocumentsRead:      {},
+		PermissionDocumentsWrite:     {},
+		PermissionIntegrationsRead:   {},
+		PermissionReconciliationRead: {},
 	},
 }
 
