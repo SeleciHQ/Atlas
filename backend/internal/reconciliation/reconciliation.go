@@ -170,13 +170,20 @@ func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID
 		AND pl.quantity = il.quantity`
 
 	matched, err := tx.Exec(ctx, `
+		WITH candidates AS (
+			SELECT il.id AS invoice_line_id, pl.id AS po_line_id, pl.purchase_order_id,
+			       row_number() OVER (PARTITION BY pl.id ORDER BY il.line_number, il.id) AS po_rank,
+			       row_number() OVER (PARTITION BY il.id ORDER BY pl.purchase_order_id, pl.line_number, pl.id) AS il_rank
+			FROM invoice_lines il
+			JOIN po_lines pl ON `+exact+`
+			WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)
+		)
 		INSERT INTO reconciliation_matches
 			(organization_id, run_id, match_type, invoice_id, purchase_order_id, confidence, evidence)
-		SELECT $1, $2, 'line', $3, pl.purchase_order_id, 1.0,
-		       jsonb_build_object('invoice_line_id', il.id, 'po_line_id', pl.id)
-		FROM invoice_lines il
-		JOIN po_lines pl ON `+exact+`
-		WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)`,
+		SELECT $1, $2, 'line', $3, purchase_order_id, 1.0,
+		       jsonb_build_object('invoice_line_id', invoice_line_id, 'po_line_id', po_line_id)
+		FROM candidates
+		WHERE po_rank = 1 AND il_rank = 1`,
 		organizationID, runID, invoiceID, poIDs)
 	if err != nil {
 		return 0, 0, err
@@ -187,8 +194,11 @@ func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID
 		       jsonb_build_object('invoice_line_id', il.id, 'description', il.description)
 		FROM invoice_lines il
 		WHERE il.organization_id = $1 AND il.invoice_id = $3
-		  AND NOT EXISTS (SELECT 1 FROM po_lines pl WHERE `+exact+` AND pl.purchase_order_id = ANY($4))`,
-		organizationID, runID, invoiceID, poIDs)
+		  AND NOT EXISTS (
+			SELECT 1 FROM reconciliation_matches m
+			WHERE m.organization_id = $1 AND m.run_id = $2 AND m.match_type = 'line'
+			  AND m.evidence->>'invoice_line_id' = il.id::text)`,
+		organizationID, runID, invoiceID)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -197,13 +207,16 @@ func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID
 		SELECT $1, $2, 'delivery_shortfall', 'warning', 'Delivered quantity is below invoiced quantity.',
 		       jsonb_build_object('invoice_line_id', il.id, 'po_line_id', pl.id,
 		                          'invoice_quantity', il.quantity::text, 'delivered_quantity', coalesce(d.delivered, 0)::text)
-		FROM invoice_lines il
-		JOIN po_lines pl ON `+exact+`
+		FROM reconciliation_matches m
+		JOIN invoice_lines il ON il.organization_id = m.organization_id
+		  AND il.id = (m.evidence->>'invoice_line_id')::uuid
+		JOIN po_lines pl ON pl.organization_id = m.organization_id
+		  AND pl.id = (m.evidence->>'po_line_id')::uuid
 		LEFT JOIN (SELECT po_line_id, sum(quantity) AS delivered FROM delivery_lines
 		           WHERE organization_id = $1 GROUP BY po_line_id) d ON d.po_line_id = pl.id
-		WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)
+		WHERE m.organization_id = $1 AND m.run_id = $2 AND m.match_type = 'line'
 		  AND coalesce(d.delivered, 0) < il.quantity`,
-		organizationID, runID, invoiceID, poIDs)
+		organizationID, runID)
 	if err != nil {
 		return 0, 0, err
 	}

@@ -143,3 +143,51 @@ func TestReconciliationLineAndDeliveryMatching(t *testing.T) {
 		t.Fatalf("unmatched line = %+v %v", result, err)
 	}
 }
+
+func TestReconciliationPreventsDuplicateLineConsumption(t *testing.T) {
+	admin, app, _ := setupTenantSchema(t)
+	organizationID := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	canon := canonical.NewService(app)
+	service := reconciliation.NewService(app)
+	supplier, err := canon.CreateSupplier(ctx, organizationID, "Dup Supplier", "EUR")
+	if err != nil {
+		t.Fatalf("supplier: %v", err)
+	}
+	po, err := canon.CreatePurchaseOrder(ctx, organizationID, supplier.ID, "PO-DUP", "EUR", 10000)
+	if err != nil {
+		t.Fatalf("po: %v", err)
+	}
+	if _, err := canon.AddPOLine(ctx, organizationID, po.ID, 1, "Widgets", "2.000000", "piece", 5000, "EUR"); err != nil {
+		t.Fatalf("po line: %v", err)
+	}
+	invoice, err := canon.CreateInvoice(ctx, organizationID, supplier.ID, "INV-DUP", "EUR", 10000)
+	if err != nil {
+		t.Fatalf("invoice: %v", err)
+	}
+	for line := 1; line <= 2; line++ {
+		if _, err := canon.AddInvoiceLine(ctx, organizationID, invoice.ID, line, "Widgets", "2.000000", "piece", 5000, "EUR"); err != nil {
+			t.Fatalf("invoice line: %v", err)
+		}
+	}
+	if err := canon.LinkInvoicePO(ctx, organizationID, invoice.ID, po.ID, nil); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	result, err := service.Run(ctx, organizationID, invoice.ID)
+	if err != nil || result.Matches != 2 || result.Discrepancies != 2 {
+		t.Fatalf("duplicate consumption = %+v %v", result, err)
+	}
+	detail, err := service.GetRun(ctx, organizationID, result.RunID)
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	lineMatches := 0
+	for _, match := range detail.Matches {
+		if match.MatchType == "line" {
+			lineMatches++
+		}
+	}
+	if lineMatches != 1 {
+		t.Fatalf("PO line consumed %d times", lineMatches)
+	}
+}
