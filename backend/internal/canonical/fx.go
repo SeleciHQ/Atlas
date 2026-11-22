@@ -3,19 +3,22 @@
 // everything else fails closed. No exchange rates or unit factors are invented.
 package canonical
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Converter converts money across currencies and quantities across units.
 type Converter interface {
-	ConvertMoney(amountMinor int64, fromCurrency, toCurrency string) (int64, error)
-	ConvertQuantity(quantity, fromUnit, toUnit string) (string, error)
+	ConvertMoney(ctx context.Context, organizationID string, amountMinor int64, fromCurrency, toCurrency string) (int64, error)
+	ConvertQuantity(ctx context.Context, organizationID, quantity, fromUnit, toUnit string) (string, error)
 }
 
 // DefaultConverter allows identity conversions only.
 type DefaultConverter struct{}
 
 // ConvertMoney returns the amount when currencies match, otherwise fails.
-func (DefaultConverter) ConvertMoney(amountMinor int64, fromCurrency, toCurrency string) (int64, error) {
+func (DefaultConverter) ConvertMoney(ctx context.Context, organizationID string, amountMinor int64, fromCurrency, toCurrency string) (int64, error) {
 	if fromCurrency == toCurrency {
 		return amountMinor, nil
 	}
@@ -23,7 +26,7 @@ func (DefaultConverter) ConvertMoney(amountMinor int64, fromCurrency, toCurrency
 }
 
 // ConvertQuantity returns the quantity when units match, otherwise fails.
-func (DefaultConverter) ConvertQuantity(quantity, fromUnit, toUnit string) (string, error) {
+func (DefaultConverter) ConvertQuantity(ctx context.Context, organizationID, quantity, fromUnit, toUnit string) (string, error) {
 	if fromUnit == toUnit {
 		return quantity, nil
 	}
