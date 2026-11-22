@@ -116,6 +116,13 @@ func (s *Service) Run(ctx context.Context, organizationID, invoiceID string) (*R
 				}
 			}
 		}
+		lineMatches, lineDiscrepancies, err := matchLines(ctx, tx, organizationID, runID, invoiceID, currency, orders)
+		if err != nil {
+			return err
+		}
+		matches += lineMatches
+		discrepancies += lineDiscrepancies
+
 		summary, _ := json.Marshal(map[string]any{"matches": matches, "discrepancies": discrepancies})
 		if _, err := tx.Exec(ctx, `
 			UPDATE reconciliation_runs SET status = 'completed', summary = $3, completed_at = now()
@@ -145,4 +152,60 @@ func (s *Service) withOrg(ctx context.Context, organizationID string, fn func(pg
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID, currency string, orders []linkedPO) (int, int, error) {
+	poIDs := make([]string, 0, len(orders))
+	for _, order := range orders {
+		poIDs = append(poIDs, order.ID)
+	}
+	if len(poIDs) == 0 {
+		return 0, 0, nil
+	}
+	exact := `
+		pl.organization_id = il.organization_id
+		AND lower(pl.description) = lower(il.description)
+		AND pl.unit_price_minor = il.unit_price_minor
+		AND pl.currency = il.currency
+		AND pl.quantity = il.quantity`
+
+	matched, err := tx.Exec(ctx, `
+		INSERT INTO reconciliation_matches
+			(organization_id, run_id, match_type, invoice_id, purchase_order_id, confidence, evidence)
+		SELECT $1, $2, 'line', $3, pl.purchase_order_id, 1.0,
+		       jsonb_build_object('invoice_line_id', il.id, 'po_line_id', pl.id)
+		FROM invoice_lines il
+		JOIN po_lines pl ON `+exact+`
+		WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)`,
+		organizationID, runID, invoiceID, poIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	unmatched, err := tx.Exec(ctx, `
+		INSERT INTO reconciliation_discrepancies (organization_id, run_id, kind, severity, description, evidence)
+		SELECT $1, $2, 'invoice_line_unmatched', 'warning', 'Invoice line has no exact purchase order line.',
+		       jsonb_build_object('invoice_line_id', il.id, 'description', il.description)
+		FROM invoice_lines il
+		WHERE il.organization_id = $1 AND il.invoice_id = $3
+		  AND NOT EXISTS (SELECT 1 FROM po_lines pl WHERE `+exact+` AND pl.purchase_order_id = ANY($4))`,
+		organizationID, runID, invoiceID, poIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	shortfall, err := tx.Exec(ctx, `
+		INSERT INTO reconciliation_discrepancies (organization_id, run_id, kind, severity, description, evidence)
+		SELECT $1, $2, 'delivery_shortfall', 'warning', 'Delivered quantity is below invoiced quantity.',
+		       jsonb_build_object('invoice_line_id', il.id, 'po_line_id', pl.id,
+		                          'invoice_quantity', il.quantity::text, 'delivered_quantity', coalesce(d.delivered, 0)::text)
+		FROM invoice_lines il
+		JOIN po_lines pl ON `+exact+`
+		LEFT JOIN (SELECT po_line_id, sum(quantity) AS delivered FROM delivery_lines
+		           WHERE organization_id = $1 GROUP BY po_line_id) d ON d.po_line_id = pl.id
+		WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)
+		  AND coalesce(d.delivered, 0) < il.quantity`,
+		organizationID, runID, invoiceID, poIDs)
+	if err != nil {
+		return 0, 0, err
+	}
+	return int(matched.RowsAffected()), int(unmatched.RowsAffected() + shortfall.RowsAffected()), nil
 }

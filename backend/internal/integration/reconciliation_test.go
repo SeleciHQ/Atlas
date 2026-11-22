@@ -76,3 +76,66 @@ func TestReconciliationDeterministic(t *testing.T) {
 		t.Fatalf("unlinked = %+v %v", result, err)
 	}
 }
+
+func TestReconciliationLineAndDeliveryMatching(t *testing.T) {
+	admin, app, _ := setupTenantSchema(t)
+	organizationID := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	canon := canonical.NewService(app)
+	service := reconciliation.NewService(app)
+	supplier, err := canon.CreateSupplier(ctx, organizationID, "Line Supplier", "EUR")
+	if err != nil {
+		t.Fatalf("supplier: %v", err)
+	}
+	po, err := canon.CreatePurchaseOrder(ctx, organizationID, supplier.ID, "PO-L1", "EUR", 10000)
+	if err != nil {
+		t.Fatalf("po: %v", err)
+	}
+	poLine, err := canon.AddPOLine(ctx, organizationID, po.ID, 1, "Widgets", "2.000000", "piece", 5000, "EUR")
+	if err != nil {
+		t.Fatalf("po line: %v", err)
+	}
+	invoice, err := canon.CreateInvoice(ctx, organizationID, supplier.ID, "INV-L1", "EUR", 10000)
+	if err != nil {
+		t.Fatalf("invoice: %v", err)
+	}
+	if _, err := canon.AddInvoiceLine(ctx, organizationID, invoice.ID, 1, "Widgets", "2.000000", "piece", 5000, "EUR"); err != nil {
+		t.Fatalf("invoice line: %v", err)
+	}
+	if err := canon.LinkInvoicePO(ctx, organizationID, invoice.ID, po.ID, nil); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	delivery, err := canon.AddDelivery(ctx, organizationID, supplier.ID, po.ID, "DN-L1", "2026-11-10")
+	if err != nil {
+		t.Fatalf("delivery: %v", err)
+	}
+	if err := canon.AddDeliveryLine(ctx, organizationID, delivery.ID, poLine.ID, "1.000000"); err != nil {
+		t.Fatalf("delivery line: %v", err)
+	}
+	result, err := service.Run(ctx, organizationID, invoice.ID)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if result.Matches != 2 || result.Discrepancies != 1 {
+		t.Fatalf("line/shortfall = %+v", result)
+	}
+	var kind string
+	if err := admin.QueryRow(ctx, `SELECT kind FROM reconciliation_discrepancies WHERE run_id = $1`, result.RunID).Scan(&kind); err != nil || kind != "delivery_shortfall" {
+		t.Fatalf("discrepancy = %q %v", kind, err)
+	}
+
+	unmatchedInvoice, err := canon.CreateInvoice(ctx, organizationID, supplier.ID, "INV-L2", "EUR", 10000)
+	if err != nil {
+		t.Fatalf("invoice 2: %v", err)
+	}
+	if _, err := canon.AddInvoiceLine(ctx, organizationID, unmatchedInvoice.ID, 1, "Different", "2.000000", "piece", 5000, "EUR"); err != nil {
+		t.Fatalf("invoice line 2: %v", err)
+	}
+	if err := canon.LinkInvoicePO(ctx, organizationID, unmatchedInvoice.ID, po.ID, nil); err != nil {
+		t.Fatalf("link 2: %v", err)
+	}
+	result, err = service.Run(ctx, organizationID, unmatchedInvoice.ID)
+	if err != nil || result.Matches != 1 || result.Discrepancies != 1 {
+		t.Fatalf("unmatched line = %+v %v", result, err)
+	}
+}

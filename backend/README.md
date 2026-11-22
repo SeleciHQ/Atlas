@@ -219,7 +219,7 @@ server-chosen (`organization/document/version`); clients cannot choose keys.
 Migration `0012_reconciliation` adds versioned `reconciliation_runs`, evidence-backed `reconciliation_matches` and
 `reconciliation_discrepancies` (RLS-scoped). `internal/reconciliation` implements deterministic two-way header
 matching: invoice total vs linked PO totals, currency checks, split invoices across multiple POs, and explicit
-`no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. No model authority; runs are reproducible.
+`no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. Line-level exact matching and three-way delivery shortfall detection are included. No model authority; runs are reproducible.
 
 ## Canonical model and ontology (Phase 6, complete)
 
@@ -374,6 +374,7 @@ go test ./cmd/... ./internal/... -count=1
   and asserts role attributes, ownership, app/auth/worker privilege boundaries, and member-function scoping).
 - The race detector is mandatory in Linux CI (`go test -race`). It is optional locally on Windows; enabling it
   would require a C toolchain, which is intentionally not added as a project dependency.
+
 
 
 
