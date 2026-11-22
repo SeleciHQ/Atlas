@@ -64,3 +64,23 @@ func getReconciliationRunHandler(deps Deps) http.HandlerFunc {
 		WriteJSON(w, http.StatusOK, detail)
 	}
 }
+
+func listReconciliationRunsHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnauthenticated, "authentication_required", "Authentication is required."))
+			return
+		}
+		if deps.Reconciliation == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "reconciliation_unavailable", "Reconciliation is not configured."))
+			return
+		}
+		runs, err := deps.Reconciliation.ListByInvoice(r.Context(), principal.OrganizationID, chi.URLParam(r, "invoiceID"))
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"reconciliation_runs": runs})
+	}
+}

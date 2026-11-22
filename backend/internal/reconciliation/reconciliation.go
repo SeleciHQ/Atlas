@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -305,4 +306,36 @@ func (s *Service) GetRun(ctx context.Context, organizationID, runID string) (*Ru
 		return nil, err
 	}
 	return detail, nil
+}
+
+// RunSummary is a list item for invoice screens.
+type RunSummary struct {
+	RunID     string          `json:"run_id"`
+	Status    string          `json:"status"`
+	Summary   json.RawMessage `json:"summary"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// ListByInvoice returns reconciliation runs for an invoice, newest first.
+func (s *Service) ListByInvoice(ctx context.Context, organizationID, invoiceID string) ([]RunSummary, error) {
+	runs := []RunSummary{}
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, status, summary, created_at FROM reconciliation_runs
+			WHERE organization_id = $1 AND invoice_id = $2 ORDER BY created_at DESC`,
+			organizationID, invoiceID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var run RunSummary
+			if err := rows.Scan(&run.RunID, &run.Status, &run.Summary, &run.CreatedAt); err != nil {
+				return err
+			}
+			runs = append(runs, run)
+		}
+		return rows.Err()
+	})
+	return runs, err
 }

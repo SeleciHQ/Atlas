@@ -58,6 +58,10 @@ func TestReconciliationDeterministic(t *testing.T) {
 	if err != nil || len(detail.Matches) != 2 || len(detail.Discrepancies) != 0 {
 		t.Fatalf("run detail = %+v %v", detail, err)
 	}
+	runs, err := service.ListByInvoice(ctx, organizationID, split.ID)
+	if err != nil || len(runs) != 1 || runs[0].RunID != result.RunID {
+		t.Fatalf("list runs = %+v %v", runs, err)
+	}
 
 	mismatch, err := canon.CreateInvoice(ctx, organizationID, supplier.ID, "INV-R3", "EUR", 9999)
 	if err != nil {

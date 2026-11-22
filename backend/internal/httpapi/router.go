@@ -97,18 +97,24 @@ func NewRouter(deps Deps) http.Handler {
 				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations", createIntegrationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
 				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/credentials", setIntegrationCredentialsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
 				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/sync", triggerIntegrationSyncHandler(deps))
 		})
