@@ -202,3 +202,42 @@ func (s *Service) withOrg(ctx context.Context, organizationID string, fn func(pg
 	}
 	return tx.Commit(ctx)
 }
+
+// SetPolicy creates the next active policy version and retires older ones.
+func (s *Service) SetPolicy(ctx context.Context, organizationID, name string, config []byte) (int, error) {
+	if name == "" || len(config) == 0 {
+		return 0, fmt.Errorf("policy name and config are required")
+	}
+	var version int
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			SELECT coalesce(max(version), 0) + 1 FROM policies
+			WHERE organization_id = $1 AND name = $2`, organizationID, name).Scan(&version); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE policies SET status = 'retired' WHERE organization_id = $1 AND name = $2 AND status = 'active'`,
+			organizationID, name); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, `
+			INSERT INTO policies (organization_id, name, version, status, config)
+			VALUES ($1, $2, $3, 'active', $4)`, organizationID, name, version, config)
+		return err
+	})
+	return version, err
+}
+
+// ActivePolicy returns the latest active policy config.
+func (s *Service) ActivePolicy(ctx context.Context, organizationID string) (json.RawMessage, error) {
+	var raw []byte
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT config FROM policies WHERE organization_id = $1 AND status = 'active'
+			ORDER BY version DESC LIMIT 1`, organizationID).Scan(&raw)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
+}

@@ -15,6 +15,7 @@ import (
 	"atlas/internal/authorization"
 	"atlas/internal/connectors"
 	"atlas/internal/documents"
+	"atlas/internal/governance"
 	"atlas/internal/httpapi"
 	"atlas/internal/identity"
 	"atlas/internal/ingestion"
@@ -166,6 +167,7 @@ func run() error {
 		Integrations:   integrationService,
 		Queue:          queue,
 		Reconciliation: reconciliation.NewService(pool),
+		Governance:     governance.NewService(pool),
 		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),
