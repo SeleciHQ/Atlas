@@ -6,6 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -163,65 +166,198 @@ func matchLines(ctx context.Context, tx pgx.Tx, organizationID, runID, invoiceID
 	if len(poIDs) == 0 {
 		return 0, 0, nil
 	}
-	exact := `
-		pl.organization_id = il.organization_id
-		AND lower(pl.description) = lower(il.description)
-		AND pl.unit_price_minor = il.unit_price_minor
-		AND pl.currency = il.currency
-		AND pl.quantity = il.quantity`
 
-	matched, err := tx.Exec(ctx, `
-		WITH candidates AS (
-			SELECT il.id AS invoice_line_id, pl.id AS po_line_id, pl.purchase_order_id,
-			       row_number() OVER (PARTITION BY pl.id ORDER BY il.line_number, il.id) AS po_rank,
-			       row_number() OVER (PARTITION BY il.id ORDER BY pl.purchase_order_id, pl.line_number, pl.id) AS il_rank
-			FROM invoice_lines il
-			JOIN po_lines pl ON `+exact+`
-			WHERE il.organization_id = $1 AND il.invoice_id = $3 AND pl.purchase_order_id = ANY($4)
-		)
-		INSERT INTO reconciliation_matches
-			(organization_id, run_id, match_type, invoice_id, purchase_order_id, confidence, evidence)
-		SELECT $1, $2, 'line', $3, purchase_order_id, 1.0,
-		       jsonb_build_object('invoice_line_id', invoice_line_id, 'po_line_id', po_line_id)
-		FROM candidates
-		WHERE po_rank = 1 AND il_rank = 1`,
-		organizationID, runID, invoiceID, poIDs)
+	type invoiceLine struct {
+		ID          string
+		Description string
+		Price       int64
+		Currency    string
+		Quantity    float64
+	}
+	type poLine struct {
+		ID              string
+		PurchaseOrderID string
+		Description     string
+		Price           int64
+		Currency        string
+		Quantity        float64
+		Delivered       float64
+		Remaining       float64
+	}
+
+	invoiceRows, err := tx.Query(ctx, `
+		SELECT id, description, unit_price_minor, currency, quantity::float8
+		FROM invoice_lines WHERE organization_id = $1 AND invoice_id = $2 ORDER BY line_number`,
+		organizationID, invoiceID)
 	if err != nil {
 		return 0, 0, err
 	}
-	unmatched, err := tx.Exec(ctx, `
-		INSERT INTO reconciliation_discrepancies (organization_id, run_id, kind, severity, description, evidence)
-		SELECT $1, $2, 'invoice_line_unmatched', 'warning', 'Invoice line has no exact purchase order line.',
-		       jsonb_build_object('invoice_line_id', il.id, 'description', il.description)
-		FROM invoice_lines il
-		WHERE il.organization_id = $1 AND il.invoice_id = $3
-		  AND NOT EXISTS (
-			SELECT 1 FROM reconciliation_matches m
-			WHERE m.organization_id = $1 AND m.run_id = $2 AND m.match_type = 'line'
-			  AND m.evidence->>'invoice_line_id' = il.id::text)`,
-		organizationID, runID, invoiceID)
+	var invoiceLines []invoiceLine
+	for invoiceRows.Next() {
+		var line invoiceLine
+		if err := invoiceRows.Scan(&line.ID, &line.Description, &line.Price, &line.Currency, &line.Quantity); err != nil {
+			invoiceRows.Close()
+			return 0, 0, err
+		}
+		invoiceLines = append(invoiceLines, line)
+	}
+	invoiceRows.Close()
+	if err := invoiceRows.Err(); err != nil {
+		return 0, 0, err
+	}
+
+	poRows, err := tx.Query(ctx, `
+		SELECT pl.id, pl.purchase_order_id, pl.description, pl.unit_price_minor, pl.currency, pl.quantity::float8,
+		       coalesce((SELECT sum(dl.quantity) FROM delivery_lines dl
+		                 WHERE dl.organization_id = pl.organization_id AND dl.po_line_id = pl.id), 0)::float8
+		FROM po_lines pl
+		WHERE pl.organization_id = $1 AND pl.purchase_order_id = ANY($2)
+		ORDER BY pl.purchase_order_id, pl.line_number, pl.id`, organizationID, poIDs)
 	if err != nil {
 		return 0, 0, err
 	}
-	shortfall, err := tx.Exec(ctx, `
-		INSERT INTO reconciliation_discrepancies (organization_id, run_id, kind, severity, description, evidence)
-		SELECT $1, $2, 'delivery_shortfall', 'warning', 'Delivered quantity is below invoiced quantity.',
-		       jsonb_build_object('invoice_line_id', il.id, 'po_line_id', pl.id,
-		                          'invoice_quantity', il.quantity::text, 'delivered_quantity', coalesce(d.delivered, 0)::text)
-		FROM reconciliation_matches m
-		JOIN invoice_lines il ON il.organization_id = m.organization_id
-		  AND il.id = (m.evidence->>'invoice_line_id')::uuid
-		JOIN po_lines pl ON pl.organization_id = m.organization_id
-		  AND pl.id = (m.evidence->>'po_line_id')::uuid
-		LEFT JOIN (SELECT po_line_id, sum(quantity) AS delivered FROM delivery_lines
-		           WHERE organization_id = $1 GROUP BY po_line_id) d ON d.po_line_id = pl.id
-		WHERE m.organization_id = $1 AND m.run_id = $2 AND m.match_type = 'line'
-		  AND coalesce(d.delivered, 0) < il.quantity`,
-		organizationID, runID)
-	if err != nil {
+	var candidates []*poLine
+	for poRows.Next() {
+		line := &poLine{}
+		if err := poRows.Scan(&line.ID, &line.PurchaseOrderID, &line.Description, &line.Price,
+			&line.Currency, &line.Quantity, &line.Delivered); err != nil {
+			poRows.Close()
+			return 0, 0, err
+		}
+		line.Remaining = line.Quantity
+		candidates = append(candidates, line)
+	}
+	poRows.Close()
+	if err := poRows.Err(); err != nil {
 		return 0, 0, err
 	}
-	return int(matched.RowsAffected()), int(unmatched.RowsAffected() + shortfall.RowsAffected()), nil
+
+	key := func(description string, price int64, currency string) string {
+		return strings.ToLower(strings.TrimSpace(description)) + "|" + strconv.FormatInt(price, 10) + "|" + currency
+	}
+	groups := map[string][]*poLine{}
+	for _, candidate := range candidates {
+		k := key(candidate.Description, candidate.Price, candidate.Currency)
+		groups[k] = append(groups[k], candidate)
+	}
+
+	matches, discrepancies := 0, 0
+	insertMatch := func(invoiceLineID, poLineID, purchaseOrderID string, confidence float64, allocated, invoiced, ordered, delivered float64) error {
+		evidence, _ := json.Marshal(map[string]any{
+			"invoice_line_id": invoiceLineID, "po_line_id": poLineID,
+			"allocated_quantity": formatQuantity(allocated),
+			"invoice_quantity":   formatQuantity(invoiced),
+			"po_quantity":        formatQuantity(ordered),
+		})
+		matches++
+		_, err := tx.Exec(ctx, `
+			INSERT INTO reconciliation_matches
+				(organization_id, run_id, match_type, invoice_id, purchase_order_id, confidence, evidence)
+			VALUES ($1, $2, 'line', $3, $4, $5, $6)`,
+			organizationID, runID, invoiceID, purchaseOrderID, confidence, evidence)
+		return err
+	}
+	insertFinding := func(kind, severity, description string, evidence map[string]any) error {
+		raw, _ := json.Marshal(evidence)
+		discrepancies++
+		_, err := tx.Exec(ctx, `
+			INSERT INTO reconciliation_discrepancies (organization_id, run_id, kind, severity, description, evidence)
+			VALUES ($1, $2, $3, $4, $5, $6)`, organizationID, runID, kind, severity, description, raw)
+		return err
+	}
+
+	const epsilon = 0.0000005
+	for _, invoiceLine := range invoiceLines {
+		remaining := invoiceLine.Quantity
+		allocatedAny := false
+		for _, candidate := range groups[key(invoiceLine.Description, invoiceLine.Price, invoiceLine.Currency)] {
+			if candidate.Remaining <= epsilon || remaining <= epsilon {
+				continue
+			}
+			allocated := math.Min(remaining, candidate.Remaining)
+			confidence := 1.0
+			if allocated < invoiceLine.Quantity-epsilon {
+				confidence = 0.9
+			}
+			if err := insertMatch(invoiceLine.ID, candidate.ID, candidate.PurchaseOrderID, confidence,
+				allocated, invoiceLine.Quantity, candidate.Quantity, candidate.Delivered); err != nil {
+				return 0, 0, err
+			}
+			allocatedAny = true
+			candidate.Remaining -= allocated
+			remaining -= allocated
+			if candidate.Delivered+epsilon < allocated {
+				if err := insertFinding("delivery_shortfall", "warning",
+					"Delivered quantity is below allocated invoice quantity.", map[string]any{
+						"invoice_line_id": invoiceLine.ID, "po_line_id": candidate.ID,
+						"allocated_quantity": formatQuantity(allocated),
+						"delivered_quantity": formatQuantity(candidate.Delivered),
+					}); err != nil {
+					return 0, 0, err
+				}
+			}
+		}
+		if remaining > epsilon {
+			if allocatedAny {
+				if err := insertFinding("invoice_line_partial", "warning",
+					"Invoice line is only partially allocated to purchase order lines.", map[string]any{
+						"invoice_line_id":      invoiceLine.ID,
+						"invoice_quantity":     formatQuantity(invoiceLine.Quantity),
+						"unallocated_quantity": formatQuantity(remaining),
+					}); err != nil {
+					return 0, 0, err
+				}
+			} else if err := insertFinding("invoice_line_unmatched", "warning",
+				"Invoice line has no matching purchase order line.", map[string]any{
+					"invoice_line_id": invoiceLine.ID, "description": invoiceLine.Description,
+				}); err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+	return matches, discrepancies, nil
+}
+
+func formatQuantity(value float64) string {
+	formatted := strconv.FormatFloat(value, 'f', 6, 64)
+	formatted = strings.TrimRight(formatted, "0")
+	formatted = strings.TrimRight(formatted, ".")
+	if formatted == "" || formatted == "-" {
+		return "0"
+	}
+	return formatted
+}
+
+// RunSummary is a list item for invoice screens.
+type RunSummary struct {
+	RunID     string          `json:"run_id"`
+	Status    string          `json:"status"`
+	Summary   json.RawMessage `json:"summary"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// ListByInvoice returns reconciliation runs for an invoice, newest first.
+func (s *Service) ListByInvoice(ctx context.Context, organizationID, invoiceID string) ([]RunSummary, error) {
+	runs := []RunSummary{}
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id, status, summary, created_at FROM reconciliation_runs
+			WHERE organization_id = $1 AND invoice_id = $2 ORDER BY created_at DESC`,
+			organizationID, invoiceID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var run RunSummary
+			if err := rows.Scan(&run.RunID, &run.Status, &run.Summary, &run.CreatedAt); err != nil {
+				return err
+			}
+			runs = append(runs, run)
+		}
+		return rows.Err()
+	})
+	return runs, err
 }
 
 // Match is one reconciliation match.
@@ -306,36 +442,4 @@ func (s *Service) GetRun(ctx context.Context, organizationID, runID string) (*Ru
 		return nil, err
 	}
 	return detail, nil
-}
-
-// RunSummary is a list item for invoice screens.
-type RunSummary struct {
-	RunID     string          `json:"run_id"`
-	Status    string          `json:"status"`
-	Summary   json.RawMessage `json:"summary"`
-	CreatedAt time.Time       `json:"created_at"`
-}
-
-// ListByInvoice returns reconciliation runs for an invoice, newest first.
-func (s *Service) ListByInvoice(ctx context.Context, organizationID, invoiceID string) ([]RunSummary, error) {
-	runs := []RunSummary{}
-	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `
-			SELECT id, status, summary, created_at FROM reconciliation_runs
-			WHERE organization_id = $1 AND invoice_id = $2 ORDER BY created_at DESC`,
-			organizationID, invoiceID)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var run RunSummary
-			if err := rows.Scan(&run.RunID, &run.Status, &run.Summary, &run.CreatedAt); err != nil {
-				return err
-			}
-			runs = append(runs, run)
-		}
-		return rows.Err()
-	})
-	return runs, err
 }
