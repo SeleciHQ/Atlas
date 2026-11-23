@@ -1173,8 +1173,9 @@ reconciliation views with organization/scope enforcement, tool schemas are snaps
 `reconciliation.run` operations (REST `Idempotency-Key`, MCP tool key), and the worker completes them, so
 `get_operation_status` works for reconciliation as well as governed actions. The MCP endpoint also supports
 optional in-process sessions (`MCP-Session-Id`, DELETE termination, principal binding), SSE framing when
-requested and `notifications/progress` events for tool calls with a progress token. Next: live client
-validation and the ADR-009 client matrix.
+requested and `notifications/progress` events for tool calls with a progress token. REST/MCP parity tests
+compare shared read results. ADR-009 records that Atlas-side conformance is complete but no external client
+is validated yet; production OAuth (ADR-002/ADR-004) and real-client sessions remain the gate.
 
 ---
 

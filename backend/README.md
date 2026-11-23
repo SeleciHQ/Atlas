@@ -319,6 +319,7 @@ negotiates the client's requested version and pins its default.
   `go test ./internal/mcpapi -run TestToolSchemasSnapshot -update`.
 - Config: `DATABASE_URL`, `MCP_PORT` (falls back to `PORT`, default `8081`), `LOG_LEVEL`, `ATLAS_ENV`. The
   command refuses `ATLAS_ENV=production` until ADR-002/ADR-004 production token issuance exists.
+- `TestRESTAndMCPParity` asserts identical invoice/discrepancy payloads over REST and MCP.
 - Not yet implemented: the ADR-009 client matrix and live client validation.
 
 ## Canonical model and ontology (Phase 6, complete)

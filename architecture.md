@@ -2099,6 +2099,13 @@ long-running operation patterns may need per-client workarounds; support burden 
 timeout limits; error rendering; progress/notification support; administrator enablement steps; plan
 restrictions; observed reliability in test sessions.
 
+**Phase 9 status (2026-11-23).** Atlas-side conformance is in place: Streamable HTTP `POST /mcp`, initialize
+version negotiation, bearer auth with 401 `WWW-Authenticate`, tools and resource templates, SSE responses,
+optional sessions, progress notifications, structured errors and REST/MCP parity tests. No external client has
+been validated yet, so the matrix has **no officially supported entries**. Credentials for real-client
+validation and production OAuth issuance (ADR-002/ADR-004) are still required before any client is declared
+supported.
+
 ### ADR-010 — Data residency and tenancy tiers
 
 **What needs to be decided.** Whether v0 remains shared multi-tenant SaaS with logical isolation, and what
