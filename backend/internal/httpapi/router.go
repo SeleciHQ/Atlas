@@ -95,90 +95,34 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/integrations", listIntegrationsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsRead)).
 				Get("/integrations/{integrationID}", getIntegrationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
-				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations", createIntegrationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
-				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/credentials", setIntegrationCredentialsHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
-				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
-				Post("/approvals", requestApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
-				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
-				Put("/policies", setPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
-				Get("/operations/{operationID}", getOperationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
-				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/sync", triggerIntegrationSyncHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
+				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+				Get("/approvals", listApprovalsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+				Get("/approvals/{approvalID}", getApprovalHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+				Post("/approvals", requestApprovalHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
+				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
+				Put("/policies", setPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations", listOperationsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 		})
 	})
 

@@ -229,11 +229,13 @@ partial expiry index. `internal/governance` evaluates the latest active policy d
 `approval_actions`, `amount_threshold_minor`), creates approvals with a policy TTL
 (`approval_ttl_minutes`, default 7 days), records decisions/expiry with audit, and keeps operations idempotent.
 
-- `POST /v1/approvals`, `POST /v1/approvals/{id}/decision`, `PUT/GET /v1/policies`,
-  `GET /v1/operations/{id}` require `approvals:request` (admin/member), `approvals:decide` (admin) or the
-  organization read/manage permissions. There is still no human `actions.execute` permission.
+- `GET/POST /v1/approvals`, `GET /v1/approvals/{id}`, `POST /v1/approvals/{id}/decision`,
+  `PUT/GET /v1/policies`, `GET /v1/operations`, `GET /v1/operations/{id}` require `approvals:request`
+  (admin/member), `approvals:decide` (admin) or the organization read/manage permissions. Lists accept
+  `?status=` and `?limit=` (1–200). There is still no human `actions.execute` permission.
 - `StartOperation` requires an approved approval, inserts the operation and enqueues `action.execute` in one
-  transaction. Duplicate idempotency keys return the existing operation without enqueueing.
+  transaction. Duplicate idempotency keys return the existing operation without enqueueing; reusing a key with
+  a different type or payload is rejected. Operation reads include the approval reference and attempt history.
 - `internal/execution` claims the operation (pending/running → running), selects an adapter by operation type
   and writes the terminal outcome through governance. Re-delivery of a terminal operation returns the recorded
   result without repeating the effect. Transient adapter errors retry through the job queue; the final attempt

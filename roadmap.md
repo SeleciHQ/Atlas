@@ -1051,7 +1051,8 @@ that cannot be bypassed.
 - Phase 9 plan prepared.
 
 **Backend status note (2026-11-23):** governance policy/approvals/operations endpoints are complete, and
-`StartOperation` now enqueues `action.execute` in the same transaction. The worker claims approved operations
+`StartOperation` now enqueues `action.execute` in the same transaction (conflicting idempotency payloads are rejected). Approval list/detail and
+operation list/detail (with attempt history) read endpoints support the later UI work. The worker claims approved operations
 through `internal/execution`, resolves an operation-type adapter (`connector.write` uses
 `ingestion.ExecuteWrite`, which is fail-closed until an integration opts in), records terminal attempts and
 audits every outcome; transient failures retry through the job queue and are closed on the final attempt.

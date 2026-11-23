@@ -2,10 +2,17 @@ package integration
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
+	"time"
 
+	"atlas/internal/authorization"
 	"atlas/internal/governance"
+	"atlas/internal/httpapi"
+	"atlas/internal/identity"
 	"atlas/internal/jobs"
+	"atlas/internal/orgs"
 )
 
 func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
@@ -56,9 +63,12 @@ func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("start operation = %s %v %v", operationID, created, err)
 	}
-	again, created, err := service.StartOperation(ctx, organizationID, approvalID, "payment.execute", "op-key-1", []byte(`{}`))
+	again, created, err := service.StartOperation(ctx, organizationID, approvalID, "payment.execute", "op-key-1", []byte(`{"amount_minor":1000}`))
 	if err != nil || created || again != operationID {
 		t.Fatalf("idempotency = %s %v %v", again, created, err)
+	}
+	if _, _, err := service.StartOperation(ctx, organizationID, approvalID, "payment.execute", "op-key-1", []byte(`{"amount_minor":2000}`)); !errors.Is(err, governance.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting idempotency payload error = %v", err)
 	}
 	if err := service.FinishOperation(ctx, organizationID, operationID, "succeeded", `{"reference":"ext-1"}`, ""); err != nil {
 		t.Fatalf("finish: %v", err)
@@ -66,6 +76,30 @@ func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	operation, err := service.GetOperation(ctx, organizationID, operationID)
 	if err != nil || operation.Status != "succeeded" || string(operation.Result) != `{"reference": "ext-1"}` {
 		t.Fatalf("operation read = %+v %v", operation, err)
+	}
+	if operation.ApprovalID == nil || *operation.ApprovalID != approvalID {
+		t.Fatalf("operation approval = %v", operation.ApprovalID)
+	}
+	if len(operation.Attempts) != 1 || operation.Attempts[0].Status != "succeeded" {
+		t.Fatalf("operation attempts = %+v", operation.Attempts)
+	}
+	operations, err := service.ListOperations(ctx, organizationID, "succeeded", 10)
+	if err != nil || len(operations) != 1 || operations[0].ID != operationID {
+		t.Fatalf("list operations = %+v %v", operations, err)
+	}
+	approval, err := service.GetApproval(ctx, organizationID, approvalID)
+	if err != nil || approval.Status != "approved" || approval.DecidedAt == nil {
+		t.Fatalf("approval read = %+v %v", approval, err)
+	}
+	approvals, err := service.ListApprovals(ctx, organizationID, "approved", 10)
+	if err != nil || len(approvals) != 1 || approvals[0].ID != approvalID {
+		t.Fatalf("list approvals = %+v %v", approvals, err)
+	}
+	if empty, err := service.ListApprovals(ctx, organizationID, "rejected", 10); err != nil || len(empty) != 0 {
+		t.Fatalf("filtered approvals = %+v %v", empty, err)
+	}
+	if _, err := service.ListApprovals(ctx, organizationID, "unknown", 10); err == nil {
+		t.Fatal("invalid approval status was accepted")
 	}
 	if err := service.FinishOperation(ctx, organizationID, operationID, "succeeded", `{}`, ""); err == nil {
 		t.Fatal("terminal operation was re-finished")
@@ -120,5 +154,94 @@ func TestApprovalExpirySweep(t *testing.T) {
 	}
 	if again, err := service.ExpireApprovals(ctx); err != nil || again != 0 {
 		t.Fatalf("second sweep = %d, %v", again, err)
+	}
+}
+
+func TestGovernanceReadEndpoints(t *testing.T) {
+	admin, app, auth := setupTenantSchema(t)
+	tenants := seedTenants(t, admin)
+	ctx := context.Background()
+	queue := jobs.NewQueue(app)
+	governanceService := governance.NewService(app, queue)
+	sessions := identity.NewSessionService(auth, time.Hour)
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:         testLogger(),
+		Pool:           app,
+		Migrations:     migrationsFS(t),
+		ServiceName:    "atlas-api",
+		Version:        "test",
+		Identity:       sessions,
+		DevSessions:    sessions,
+		Authorizer:     authorization.NewService(),
+		Orgs:           orgs.NewService(app),
+		Governance:     governanceService,
+		DevAuthEnabled: true,
+	})
+
+	if response := request(t, router, http.MethodGet, "/v1/approvals", nil, nil); response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated approvals status = %d", response.Code)
+	}
+	cookie := login(t, router, tenants.OrganizationA, tenants.AdminEmailA)
+
+	approvalID, err := governanceService.RequestApproval(ctx, tenants.OrganizationA,
+		"connector.write", "invoice", "inv-1", tenants.AdminUserA)
+	if err != nil {
+		t.Fatalf("request approval: %v", err)
+	}
+	if err := governanceService.Decide(ctx, tenants.OrganizationA, approvalID, tenants.AdminUserA, true, "ok"); err != nil {
+		t.Fatalf("decide: %v", err)
+	}
+	operationID, _, err := governanceService.StartOperation(ctx, tenants.OrganizationA, approvalID,
+		"connector.write", "http-key-1", []byte(`{}`))
+	if err != nil {
+		t.Fatalf("start operation: %v", err)
+	}
+
+	approvalsResponse := request(t, router, http.MethodGet, "/v1/approvals?status=approved&limit=10", cookie, nil)
+	if approvalsResponse.Code != http.StatusOK {
+		t.Fatalf("approvals status = %d, body = %s", approvalsResponse.Code, approvalsResponse.Body.String())
+	}
+	var approvalsBody struct {
+		Approvals []governance.Approval `json:"approvals"`
+	}
+	decodeBody(t, approvalsResponse, &approvalsBody)
+	if len(approvalsBody.Approvals) != 1 || approvalsBody.Approvals[0].ID != approvalID {
+		t.Fatalf("approvals body = %+v", approvalsBody)
+	}
+
+	approvalResponse := request(t, router, http.MethodGet, "/v1/approvals/"+approvalID, cookie, nil)
+	if approvalResponse.Code != http.StatusOK {
+		t.Fatalf("approval status = %d, body = %s", approvalResponse.Code, approvalResponse.Body.String())
+	}
+
+	operationsResponse := request(t, router, http.MethodGet, "/v1/operations?status=pending", cookie, nil)
+	if operationsResponse.Code != http.StatusOK {
+		t.Fatalf("operations status = %d, body = %s", operationsResponse.Code, operationsResponse.Body.String())
+	}
+	var operationsBody struct {
+		Operations []governance.Operation `json:"operations"`
+	}
+	decodeBody(t, operationsResponse, &operationsBody)
+	if len(operationsBody.Operations) != 1 || operationsBody.Operations[0].ID != operationID {
+		t.Fatalf("operations body = %+v", operationsBody)
+	}
+
+	operationResponse := request(t, router, http.MethodGet, "/v1/operations/"+operationID, cookie, nil)
+	if operationResponse.Code != http.StatusOK {
+		t.Fatalf("operation status = %d, body = %s", operationResponse.Code, operationResponse.Body.String())
+	}
+	var operationBody struct {
+		Operation governance.Operation `json:"operation"`
+	}
+	decodeBody(t, operationResponse, &operationBody)
+	if operationBody.Operation.ApprovalID == nil || *operationBody.Operation.ApprovalID != approvalID {
+		t.Fatalf("operation body = %+v", operationBody)
+	}
+
+	if response := request(t, router, http.MethodGet, "/v1/approvals?status=bogus", cookie, nil); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid approval status = %d", response.Code)
+	}
+	if response := request(t, router, http.MethodGet, "/v1/operations?limit=999", cookie, nil); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid limit = %d", response.Code)
 	}
 }

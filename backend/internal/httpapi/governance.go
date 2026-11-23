@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -122,4 +123,88 @@ func getOperationHandler(deps Deps) http.HandlerFunc {
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"operation": operation})
 	}
+}
+
+func listOperationsHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok || deps.Governance == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "governance_unavailable", "Governance is not configured."))
+			return
+		}
+		status := r.URL.Query().Get("status")
+		switch status {
+		case "", "pending", "running", "succeeded", "failed", "cancelled":
+		default:
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindInvalid, "invalid_request", "Unknown operation status."))
+			return
+		}
+		limit, err := listLimit(r)
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		operations, err := deps.Governance.ListOperations(r.Context(), principal.OrganizationID, status, limit)
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"operations": operations})
+	}
+}
+
+func getApprovalHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok || deps.Governance == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "governance_unavailable", "Governance is not configured."))
+			return
+		}
+		approval, err := deps.Governance.GetApproval(r.Context(), principal.OrganizationID, chi.URLParam(r, "approvalID"))
+		if err != nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindNotFound, "approval_not_found", "Approval not found."))
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"approval": approval})
+	}
+}
+
+func listApprovalsHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok || deps.Governance == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "governance_unavailable", "Governance is not configured."))
+			return
+		}
+		status := r.URL.Query().Get("status")
+		switch status {
+		case "", "pending", "approved", "rejected", "expired":
+		default:
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindInvalid, "invalid_request", "Unknown approval status."))
+			return
+		}
+		limit, err := listLimit(r)
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		approvals, err := deps.Governance.ListApprovals(r.Context(), principal.OrganizationID, status, limit)
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"approvals": approvals})
+	}
+}
+
+func listLimit(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 50, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 || limit > 200 {
+		return 0, apperr.New(apperr.KindInvalid, "invalid_request", "limit must be between 1 and 200.")
+	}
+	return limit, nil
 }

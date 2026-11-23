@@ -23,6 +23,9 @@ const ActionExecuteJob = "action.execute"
 // ErrOperationTerminal is returned when a terminal operation is mutated.
 var ErrOperationTerminal = errors.New("operation is already terminal")
 
+// ErrIdempotencyConflict is returned when a key is reused for a different request.
+var ErrIdempotencyConflict = errors.New("idempotency key was used with a different request")
+
 // defaultApprovalTTL applies when the active policy does not set a shorter TTL.
 const defaultApprovalTTL = 7 * 24 * time.Hour
 
@@ -186,9 +189,17 @@ func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID
 			ON CONFLICT (organization_id, idempotency_key) DO NOTHING RETURNING id`,
 			organizationID, approvalID, operationType, idempotencyKey, payload).Scan(&id)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return tx.QueryRow(ctx, `
-				SELECT id FROM operations WHERE organization_id = $1 AND idempotency_key = $2`,
-				organizationID, idempotencyKey).Scan(&id)
+			var sameRequest bool
+			if err := tx.QueryRow(ctx, `
+				SELECT id, (type = $3 AND payload = $4::jsonb)
+				FROM operations WHERE organization_id = $1 AND idempotency_key = $2`,
+				organizationID, idempotencyKey, operationType, payload).Scan(&id, &sameRequest); err != nil {
+				return err
+			}
+			if !sameRequest {
+				return fmt.Errorf("%w: %s", ErrIdempotencyConflict, idempotencyKey)
+			}
+			return nil
 		}
 		if err != nil {
 			return err
@@ -324,31 +335,190 @@ func (s *Service) ActivePolicy(ctx context.Context, organizationID string) (json
 	return raw, nil
 }
 
-// Operation is the operation read model.
-type Operation struct {
-	ID             string          `json:"id"`
-	Type           string          `json:"type"`
-	Status         string          `json:"status"`
-	IdempotencyKey string          `json:"idempotency_key"`
-	Result         json.RawMessage `json:"result,omitempty"`
-	LastError      *string         `json:"last_error,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
+// Approval is the approval read model.
+type Approval struct {
+	ID             string     `json:"id"`
+	OperationType  string     `json:"operation_type"`
+	ObjectType     string     `json:"object_type"`
+	ObjectID       string     `json:"object_id"`
+	Status         string     `json:"status"`
+	RequestedBy    *string    `json:"requested_by,omitempty"`
+	DecidedBy      *string    `json:"decided_by,omitempty"`
+	DecisionReason *string    `json:"decision_reason,omitempty"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	DecidedAt      *time.Time `json:"decided_at,omitempty"`
 }
 
-// GetOperation returns one operation.
-func (s *Service) GetOperation(ctx context.Context, organizationID, operationID string) (*Operation, error) {
-	var operation Operation
-	var result []byte
+const approvalColumns = `id, operation_type, object_type, object_id, status,
+	requested_by::text, decided_by::text, decision_reason, expires_at, created_at, decided_at`
+
+func scanApproval(row pgx.Row) (*Approval, error) {
+	var approval Approval
+	err := row.Scan(&approval.ID, &approval.OperationType, &approval.ObjectType, &approval.ObjectID,
+		&approval.Status, &approval.RequestedBy, &approval.DecidedBy, &approval.DecisionReason,
+		&approval.ExpiresAt, &approval.CreatedAt, &approval.DecidedAt)
+	return &approval, err
+}
+
+// GetApproval returns one approval.
+func (s *Service) GetApproval(ctx context.Context, organizationID, approvalID string) (*Approval, error) {
+	var approval *Approval
 	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `
-			SELECT id, type, status, idempotency_key, result, last_error, created_at
-			FROM operations WHERE organization_id = $1 AND id = $2`,
-			organizationID, operationID).Scan(&operation.ID, &operation.Type, &operation.Status,
-			&operation.IdempotencyKey, &result, &operation.LastError, &operation.CreatedAt)
+		var err error
+		approval, err = scanApproval(tx.QueryRow(ctx, `
+			SELECT `+approvalColumns+` FROM approvals
+			WHERE organization_id = $1 AND id = $2`, organizationID, approvalID))
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	operation.Result = result
-	return &operation, nil
+	return approval, nil
+}
+
+// ListApprovals returns approvals newest first. An empty status means all.
+func (s *Service) ListApprovals(ctx context.Context, organizationID, status string, limit int) ([]Approval, error) {
+	if status != "" && status != "pending" && status != "approved" && status != "rejected" && status != "expired" {
+		return nil, fmt.Errorf("invalid approval status %q", status)
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var approvals []Approval
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT `+approvalColumns+` FROM approvals
+			WHERE organization_id = $1 AND ($2 = '' OR status = $2)
+			ORDER BY created_at DESC LIMIT $3`, organizationID, status, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			approval, err := scanApproval(rows)
+			if err != nil {
+				return err
+			}
+			approvals = append(approvals, *approval)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return approvals, nil
+}
+
+// OperationAttempt is one execution attempt record.
+type OperationAttempt struct {
+	Attempt           int        `json:"attempt"`
+	Status            string     `json:"status"`
+	ExternalReference *string    `json:"external_reference,omitempty"`
+	Error             *string    `json:"error,omitempty"`
+	StartedAt         time.Time  `json:"started_at"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+}
+
+// Operation is the operation read model.
+type Operation struct {
+	ID             string             `json:"id"`
+	Type           string             `json:"type"`
+	Status         string             `json:"status"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	ApprovalID     *string            `json:"approval_id,omitempty"`
+	Result         json.RawMessage    `json:"result,omitempty"`
+	LastError      *string            `json:"last_error,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
+	UpdatedAt      time.Time          `json:"updated_at"`
+	Attempts       []OperationAttempt `json:"attempts,omitempty"`
+}
+
+const operationColumns = `id, type, status, idempotency_key, approval_id::text, result, last_error,
+	created_at, updated_at`
+
+func scanOperation(row pgx.Row) (*Operation, []byte, error) {
+	var operation Operation
+	var result []byte
+	err := row.Scan(&operation.ID, &operation.Type, &operation.Status, &operation.IdempotencyKey,
+		&operation.ApprovalID, &result, &operation.LastError, &operation.CreatedAt, &operation.UpdatedAt)
+	return &operation, result, err
+}
+
+// GetOperation returns one operation with its attempt history.
+func (s *Service) GetOperation(ctx context.Context, organizationID, operationID string) (*Operation, error) {
+	var operation *Operation
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		var result []byte
+		var err error
+		operation, result, err = scanOperation(tx.QueryRow(ctx, `
+			SELECT `+operationColumns+` FROM operations
+			WHERE organization_id = $1 AND id = $2`, organizationID, operationID))
+		if err != nil {
+			return err
+		}
+		operation.Result = result
+		rows, err := tx.Query(ctx, `
+			SELECT attempt, status, external_reference, error, started_at, finished_at
+			FROM operation_attempts WHERE organization_id = $1 AND operation_id = $2
+			ORDER BY attempt`, organizationID, operationID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var attempt OperationAttempt
+			if err := rows.Scan(&attempt.Attempt, &attempt.Status, &attempt.ExternalReference,
+				&attempt.Error, &attempt.StartedAt, &attempt.FinishedAt); err != nil {
+				return err
+			}
+			operation.Attempts = append(operation.Attempts, attempt)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return operation, nil
+}
+
+// ListOperations returns operations newest first. An empty status means all.
+func (s *Service) ListOperations(ctx context.Context, organizationID, status string, limit int) ([]Operation, error) {
+	if status != "" && status != "pending" && status != "running" && status != "succeeded" &&
+		status != "failed" && status != "cancelled" {
+		return nil, fmt.Errorf("invalid operation status %q", status)
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	var operations []Operation
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT `+operationColumns+` FROM operations
+			WHERE organization_id = $1 AND ($2 = '' OR status = $2)
+			ORDER BY created_at DESC LIMIT $3`, organizationID, status, limit)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			operation, result, err := scanOperation(rows)
+			if err != nil {
+				return err
+			}
+			operation.Result = result
+			operations = append(operations, *operation)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return operations, nil
 }
