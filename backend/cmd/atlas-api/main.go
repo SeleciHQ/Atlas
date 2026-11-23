@@ -14,6 +14,7 @@ import (
 
 	"atlas/internal/agentaccess"
 	"atlas/internal/authorization"
+	"atlas/internal/canonical"
 	"atlas/internal/connectors"
 	"atlas/internal/documents"
 	"atlas/internal/governance"
@@ -26,6 +27,7 @@ import (
 	"atlas/internal/platform/db"
 	"atlas/internal/platform/logging"
 	"atlas/internal/platform/migrate"
+	"atlas/internal/query"
 	"atlas/internal/reconciliation"
 	"atlas/internal/secrets"
 	"atlas/internal/storage"
@@ -153,6 +155,8 @@ func run() error {
 		logger.Warn("integrations_disabled", "detail", "set ATLAS_SECRET_KEY to enable integration management")
 	}
 
+	canonicalService := canonical.NewService(pool)
+	reconciliationService := reconciliation.NewService(pool)
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger:         logger,
 		Pool:           pool,
@@ -167,7 +171,8 @@ func run() error {
 		Documents:      documentsService,
 		Integrations:   integrationService,
 		Queue:          queue,
-		Reconciliation: reconciliation.NewService(pool),
+		Reconciliation: reconciliationService,
+		Query:          query.NewService(pool, canonicalService, reconciliationService),
 		Governance:     governance.NewService(pool, queue),
 		Agents:         agentaccess.NewService(pool),
 		StorageHandler: storageHandler,

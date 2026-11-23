@@ -269,6 +269,21 @@ Migration `0016_agent_tokens` adds `agent_tokens` (RLS-scoped) and the
 - Re-run `scripts/provision-app-role.sql`: it grants `atlas_app` EXECUTE on `atlas_resolve_agent_token`
   and revokes `agent_tokens` from `atlas_worker`.
 
+## Shared query layer (Phase 9, in progress)
+
+`internal/query` is the read layer shared by REST (and, next, MCP): invoice/PO search with supplier, number,
+currency and amount filters; supplier search; delivery lookup by invoice or PO; discrepancy search by kind,
+severity, invoice, run or supplier; plus detail reads delegated to `canonical` and `reconciliation`. All
+queries are organization-scoped and capped at 100 rows (default 25).
+
+- Scope-protected REST endpoints: `GET /v1/invoices`, `GET /v1/invoices/{id}`,
+  `GET /v1/purchase-orders`, `GET /v1/purchase-orders/{id}`, `GET /v1/suppliers`,
+  `GET /v1/suppliers/{id}`, `GET /v1/deliveries?invoice_id=|purchase_order_id=`,
+  `GET /v1/discrepancies`. Existing reconciliation, operations and approval-read endpoints now use the same
+  scope middleware.
+- Humans are authorized by the equivalent role permission; agents need the matching scope. Invalid UUIDs,
+  currencies, severities and limits return 400 before any database work.
+
 ## Canonical model and ontology (Phase 6, complete)
 
 Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,

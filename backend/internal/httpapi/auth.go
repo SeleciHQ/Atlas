@@ -114,6 +114,25 @@ func requirePermission(deps Deps, permission authorization.Permission) func(http
 	}
 }
 
+// requireScope authorizes a shared read/action endpoint by agent scope, with
+// human principals mapped through their role's equivalent permission.
+func requireScope(deps Deps, scope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := identity.PrincipalFrom(r.Context())
+			if !ok {
+				WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnauthenticated, "authentication_required", "Authentication is required."))
+				return
+			}
+			if err := deps.Authorizer.AuthorizeScope(principal, scope); err != nil {
+				WriteError(w, r, deps.Logger, err)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // devLoginHandler issues a development session. The route is only registered
 // when development authentication is enabled, and configuration prevents it in
 // staging/production.

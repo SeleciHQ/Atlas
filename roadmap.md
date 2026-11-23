@@ -1161,8 +1161,11 @@ authentication with pre-tenant resolution, and scope-based authorization (`invoi
 `purchase_orders:read`, `deliveries:read`, `suppliers:read`, `reconciliation:read|run`,
 `discrepancies:read`, `actions:request`, `approvals:request`, `operations:read`). REST management endpoints
 are under `/v1/agents`; human sessions and agent bearer tokens share one authentication middleware. Token
-issuance is the roadmap-permitted development issuer pending ADR-002/ADR-004. Next: shared query/read
-services and the eleven tools over REST and MCP (Streamable HTTP), then contract and client-matrix work.
+issuance is the roadmap-permitted development issuer pending ADR-002/ADR-004. The shared `internal/query`
+read layer now backs invoice/PO search, supplier search, deliveries, discrepancies and detail reads over
+scope-protected REST endpoints; existing reconciliation/operation/approval-read endpoints use the same scope
+middleware. Next: the eleven MCP tools over Streamable HTTP with REST parity, contract tests and the ADR-009
+client matrix.
 
 ---
 

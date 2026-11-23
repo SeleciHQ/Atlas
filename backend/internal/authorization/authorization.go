@@ -21,6 +21,12 @@ const (
 	PermissionIntegrationsWrite  Permission = "integrations:write"
 	PermissionReconciliationRead Permission = "reconciliation:read"
 	PermissionReconciliationRun  Permission = "reconciliation:run"
+	PermissionInvoicesRead       Permission = "invoices:read"
+	PermissionPurchaseOrdersRead Permission = "purchase_orders:read"
+	PermissionDeliveriesRead     Permission = "deliveries:read"
+	PermissionSuppliersRead      Permission = "suppliers:read"
+	PermissionDiscrepanciesRead  Permission = "discrepancies:read"
+	PermissionOperationsRead     Permission = "operations:read"
 	PermissionApprovalsRequest   Permission = "approvals:request"
 	PermissionApprovalsDecide    Permission = "approvals:decide"
 	// Approval permissions may be granted explicitly to eligible members once
@@ -43,6 +49,12 @@ var rolePermissions = map[string]map[Permission]struct{}{
 		PermissionIntegrationsRead:   {},
 		PermissionIntegrationsWrite:  {},
 		PermissionReconciliationRead: {},
+		PermissionInvoicesRead:       {},
+		PermissionPurchaseOrdersRead: {},
+		PermissionDeliveriesRead:     {},
+		PermissionSuppliersRead:      {},
+		PermissionDiscrepanciesRead:  {},
+		PermissionOperationsRead:     {},
 		PermissionApprovalsRequest:   {},
 		PermissionReconciliationRun:  {},
 	},
@@ -53,6 +65,12 @@ var rolePermissions = map[string]map[Permission]struct{}{
 		PermissionDocumentsWrite:     {},
 		PermissionIntegrationsRead:   {},
 		PermissionReconciliationRead: {},
+		PermissionInvoicesRead:       {},
+		PermissionPurchaseOrdersRead: {},
+		PermissionDeliveriesRead:     {},
+		PermissionSuppliersRead:      {},
+		PermissionDiscrepanciesRead:  {},
+		PermissionOperationsRead:     {},
 		PermissionApprovalsRequest:   {},
 	},
 }
@@ -91,10 +109,15 @@ func (s Service) Allowed(principal identity.Principal, permission Permission) bo
 // one exists. A human calling an agent-capable REST endpoint is evaluated by
 // role; scopes without a human equivalent are agent-only.
 var scopePermissions = map[string]Permission{
-	"reconciliation:read": PermissionReconciliationRead,
-	"reconciliation:run":  PermissionReconciliationRun,
-	"approvals:request":   PermissionApprovalsRequest,
-	"operations:read":     PermissionOrganizationRead,
+	"invoices:read":        PermissionInvoicesRead,
+	"purchase_orders:read": PermissionPurchaseOrdersRead,
+	"deliveries:read":      PermissionDeliveriesRead,
+	"suppliers:read":       PermissionSuppliersRead,
+	"discrepancies:read":   PermissionDiscrepanciesRead,
+	"reconciliation:read":  PermissionReconciliationRead,
+	"reconciliation:run":   PermissionReconciliationRun,
+	"approvals:request":    PermissionApprovalsRequest,
+	"operations:read":      PermissionOperationsRead,
 }
 
 // AuthorizeScope returns nil when an agent connection holds scope, or when a

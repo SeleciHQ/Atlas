@@ -58,10 +58,10 @@ func TestAgentScopeAuthorization(t *testing.T) {
 	}
 
 	human := identity.Principal{Kind: identity.KindHuman, Role: identity.RoleMember}
-	if !service.AllowedScope(human, "reconciliation:read") {
-		t.Fatal("member should map to reconciliation:read permission")
+	if !service.AllowedScope(human, "reconciliation:read") || !service.AllowedScope(human, "invoices:read") {
+		t.Fatal("member should map to reconciliation:read and invoices:read permissions")
 	}
-	if service.AllowedScope(human, "invoices:read") {
+	if service.AllowedScope(human, "actions:request") {
 		t.Fatal("human scope without a permission mapping must be denied")
 	}
 	unknown := identity.Principal{Kind: identity.KindWorkload}

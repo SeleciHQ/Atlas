@@ -22,6 +22,7 @@ import (
 	"atlas/internal/jobs"
 	"atlas/internal/orgs"
 	"atlas/internal/platform/apperr"
+	"atlas/internal/query"
 	"atlas/internal/reconciliation"
 )
 
@@ -41,6 +42,7 @@ type Deps struct {
 	Integrations   *ingestion.Service
 	Queue          *jobs.Queue
 	Reconciliation *reconciliation.Service
+	Query          *query.Service
 	Governance     *governance.Service
 	Agents         *agentaccess.Service
 	StorageHandler http.Handler
@@ -116,17 +118,33 @@ func NewRouter(deps Deps) http.Handler {
 				Post("/integrations/{integrationID}/credentials", setIntegrationCredentialsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
 				Post("/integrations/{integrationID}/sync", triggerIntegrationSyncHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRun)).
+			r.With(requireScope(deps, "invoices:read")).
+				Get("/invoices", searchInvoicesHandler(deps))
+			r.With(requireScope(deps, "invoices:read")).
+				Get("/invoices/{invoiceID}", getInvoiceHandler(deps))
+			r.With(requireScope(deps, "purchase_orders:read")).
+				Get("/purchase-orders", searchPurchaseOrdersHandler(deps))
+			r.With(requireScope(deps, "purchase_orders:read")).
+				Get("/purchase-orders/{purchaseOrderID}", getPurchaseOrderHandler(deps))
+			r.With(requireScope(deps, "suppliers:read")).
+				Get("/suppliers", searchSuppliersHandler(deps))
+			r.With(requireScope(deps, "suppliers:read")).
+				Get("/suppliers/{supplierID}", getSupplierHandler(deps))
+			r.With(requireScope(deps, "deliveries:read")).
+				Get("/deliveries", listDeliveriesHandler(deps))
+			r.With(requireScope(deps, "discrepancies:read")).
+				Get("/discrepancies", searchDiscrepanciesHandler(deps))
+			r.With(requireScope(deps, "reconciliation:run")).
 				Post("/invoices/{invoiceID}/reconcile", triggerReconciliationHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+			r.With(requireScope(deps, "reconciliation:read")).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
+			r.With(requireScope(deps, "reconciliation:read")).
 				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+			r.With(requireScope(deps, "approvals:request")).
 				Get("/approvals", listApprovalsHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+			r.With(requireScope(deps, "approvals:request")).
 				Get("/approvals/{approvalID}", getApprovalHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
+			r.With(requireScope(deps, "approvals:request")).
 				Post("/approvals", requestApprovalHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionApprovalsDecide)).
 				Post("/approvals/{approvalID}/decision", decideApprovalHandler(deps))
@@ -134,9 +152,9 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+			r.With(requireScope(deps, "operations:read")).
 				Get("/operations", listOperationsHandler(deps))
-			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+			r.With(requireScope(deps, "operations:read")).
 				Get("/operations/{operationID}", getOperationHandler(deps))
 		})
 	})
