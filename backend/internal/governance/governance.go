@@ -88,9 +88,31 @@ func (s *Service) Evaluate(ctx context.Context, organizationID, action string, a
 	return &Decision{Allowed: false, Reason: "action not permitted by policy"}, nil
 }
 
-// RequestApproval creates a pending approval. The expiry comes from the active
-// policy's approval_ttl_minutes, or a conservative default when unset.
+// Actor identifies who initiated a governance action. Agent, human, integration
+// and workload actors are all recorded in audit; only humans have a user row.
+type Actor struct {
+	Kind    string
+	ID      string
+	Display string
+}
+
+// RequestApproval creates a pending approval for a human requester.
 func (s *Service) RequestApproval(ctx context.Context, organizationID, operationType, objectType, objectID, requestedBy string) (string, error) {
+	return s.RequestApprovalAs(ctx, organizationID, operationType, objectType, objectID,
+		Actor{Kind: "human", ID: requestedBy})
+}
+
+// RequestApprovalAs creates a pending approval attributed to actor. The expiry
+// comes from the active policy's approval_ttl_minutes, or a conservative
+// default when unset.
+func (s *Service) RequestApprovalAs(ctx context.Context, organizationID, operationType, objectType, objectID string, actor Actor) (string, error) {
+	if actor.Kind == "" {
+		actor.Kind = "human"
+	}
+	requestedBy := ""
+	if actor.Kind == "human" {
+		requestedBy = actor.ID
+	}
 	var id string
 	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
 		ttl := defaultApprovalTTL
@@ -119,7 +141,7 @@ func (s *Service) RequestApproval(ctx context.Context, organizationID, operation
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Event{
-			OrganizationID: organizationID, ActorKind: "human", ActorID: requestedBy,
+			OrganizationID: organizationID, ActorKind: actor.Kind, ActorID: actor.ID, ActorDisplay: actor.Display,
 			Action: "approval.requested", ResourceType: objectType, ResourceID: objectID, Decision: "require_approval",
 			Metadata: map[string]any{"operation_type": operationType},
 		})

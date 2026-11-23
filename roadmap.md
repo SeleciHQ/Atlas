@@ -1164,8 +1164,10 @@ are under `/v1/agents`; human sessions and agent bearer tokens share one authent
 issuance is the roadmap-permitted development issuer pending ADR-002/ADR-004. The shared `internal/query`
 read layer now backs invoice/PO search, supplier search, deliveries, discrepancies and detail reads over
 scope-protected REST endpoints; existing reconciliation/operation/approval-read endpoints use the same scope
-middleware. Next: the eleven MCP tools over Streamable HTTP with REST parity, contract tests and the ADR-009
-client matrix.
+middleware. `cmd/atlas-mcp` now serves `POST /mcp` over Streamable HTTP with bearer-token auth, the eleven
+tools (scope-checked; agent-attributed approvals) and JSON-RPC error mapping, sharing the same query,
+reconciliation, governance and job services as REST. Next: MCP resources, contract/snapshot tests, transport
+compatibility details and the ADR-009 client matrix.
 
 ---
 

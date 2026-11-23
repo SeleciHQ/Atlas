@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"atlas/internal/governance"
 	"atlas/internal/identity"
 	"atlas/internal/platform/apperr"
 )
@@ -40,8 +41,10 @@ func requestApprovalHandler(deps Deps) http.HandlerFunc {
 			WriteError(w, r, deps.Logger, apperr.New(apperr.KindInvalid, "invalid_request", "operation_type, object_type and object_id are required."))
 			return
 		}
-		id, err := deps.Governance.RequestApproval(r.Context(), principal.OrganizationID,
-			request.OperationType, request.ObjectType, request.ObjectID, principal.ID)
+		id, err := deps.Governance.RequestApprovalAs(r.Context(), principal.OrganizationID,
+			request.OperationType, request.ObjectType, request.ObjectID, governance.Actor{
+				Kind: string(principal.Kind), ID: principal.ID, Display: principal.DisplayName,
+			})
 		if err != nil {
 			WriteError(w, r, deps.Logger, err)
 			return

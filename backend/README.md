@@ -284,6 +284,26 @@ queries are organization-scoped and capped at 100 rows (default 25).
 - Humans are authorized by the equivalent role permission; agents need the matching scope. Invalid UUIDs,
   currencies, severities and limits return 400 before any database work.
 
+## MCP endpoint (Phase 9, in progress)
+
+`cmd/atlas-mcp` serves the remote MCP endpoint over Streamable HTTP at `POST /mcp` (JSON responses; GET/DELETE
+return 405 for now). It requires an Atlas agent bearer token and returns `401` with `WWW-Authenticate` when
+authentication fails. Supported protocol versions are `2024-11-05`, `2025-03-26` and `2025-06-18`; the server
+negotiates the client's requested version and pins its default.
+
+- Methods: `initialize`, `ping`, `notifications/initialized`, `tools/list`, `tools/call`.
+- Eleven tools: `search_invoices`, `get_invoice`, `search_purchase_orders`, `get_delivery_records`,
+  `get_supplier`, `reconcile_invoice`, `get_reconciliation`, `search_discrepancies`,
+  `request_supplier_followup`, `request_approval`, `get_operation_status`. Each tool declares its scope;
+  missing scope returns JSON-RPC `-32003`, unknown tools `-32602`, unknown methods `-32601`.
+- Tools share `internal/query`, `reconciliation`, `governance` and `jobs` with REST; handlers only validate
+  transport input and map results. `request_supplier_followup` evaluates policy and records an agent-attributed
+  approval. `reconcile_invoice` enqueues `reconciliation.run` and returns a job id.
+- Config: `DATABASE_URL`, `MCP_PORT` (falls back to `PORT`, default `8081`), `LOG_LEVEL`, `ATLAS_ENV`. The
+  command refuses `ATLAS_ENV=production` until ADR-002/ADR-004 production token issuance exists.
+- Not yet implemented: MCP resources, sessions/SSE streams, progress notifications and the ADR-009 client
+  matrix.
+
 ## Canonical model and ontology (Phase 6, complete)
 
 Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,
