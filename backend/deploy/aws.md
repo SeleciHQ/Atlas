@@ -53,8 +53,19 @@ includes `/app/migrations` and `/app/scripts` plus `MIGRATIONS_DIR`.
   `atlas/workos` (client ID/API key/redirect/authkit domain), `atlas/r2`
   (endpoint/bucket/keys), `atlas/secret-key` (`ATLAS_SECRET_KEY`).
 - ECS execution role may read only those secrets and write logs. Each service
-  gets a distinct IAM task role (workload identity is finalized in ADR-004);
-  the sandbox task roles have no AWS data-plane permissions beyond logs.
+  gets a distinct IAM task role (ADR-004) with no AWS data-plane permissions by
+  default. See [`iam.md`](iam.md) for the role matrix, database-role mapping,
+  rotation and verification checklist.
+
+## Workload identity (ADR-004)
+
+Create the shared execution role and one task role per process using
+`iam/ecs-task-trust-policy.json`, `iam/ecs-execution-policy.json` and
+`iam/task-role-policy.json`. Never place static AWS keys in task definitions.
+Database URLs map to the four existing roles: `atlas_api` uses `atlas_app` +
+`atlas_auth`, MCP uses `atlas_app`, workers/scheduler/Python use `atlas_worker`,
+and one-off migration/provisioning tasks use `atlas_migrator`. Full matrix:
+[`iam.md`](iam.md).
 
 ## Environment per service
 

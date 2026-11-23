@@ -1988,8 +1988,8 @@ requirement. Until ADR-001 is decided, define interfaces and development credent
 authentication (Phase 10 gate).
 
 **Phase 2 progress.** The `identity.WorkloadIdentity` interface and per-process workload names exist. No
-issuance or verification mechanism is implemented; database roles are provisioned manually via
-`backend/scripts/provision-app-role.sql`. The decision remains **Open**.
+in-process token issuance/verification is implemented; database roles are provisioned via
+`backend/scripts/provision-app-role.sql`. The mechanism is now **Accepted** (see decision record).
 
 **Impact if delayed.** Production deployment cannot issue scoped credentials; database roles may be
 provisioned with broader access than intended; cross-process trust remains development-grade.
@@ -1997,6 +1997,41 @@ provisioned with broader access than intended; cross-process trust remains devel
 **Evidence to inform the choice.** Cloud-native identity guarantees and token lifetime; database
 authentication options; secret manager integration; revocation behaviour; auditability of workload actions;
 operational complexity of alternatives; ability to express per-process roles without shared secrets.
+
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** ADR-001 selects AWS ECS Fargate. Atlas needs each process to hold only its own credentials,
+> avoid shared or static AWS keys, and keep the existing database role separation (`atlas_app`, `atlas_auth`,
+> `atlas_worker`, `atlas_migrator`). There are no service-to-service network calls today.
+>
+> **Options considered:** (a) ECS task IAM roles per process with Secrets Manager-injected database
+> credentials; (b) one shared task role with broader permissions; (c) RDS IAM database authentication for all
+> roles; (d) SPIFFE/SPIRE or a custom signed-token scheme. A shared role was rejected because it removes
+> least privilege and audit attribution. RDS IAM auth was deferred for v0: pgx would need an AWS token
+> provider and refresh path, and rotation testing is not yet in place. SPIFFE/SPIRE has no demonstrated
+> requirement and adds control-plane surface.
+>
+> **Recommendation:** One ECS task role per process with **no AWS data-plane permissions by default**;
+> a per-environment ECS execution role that may pull images, write logs and read only the environment's
+> Secrets Manager entries. Database URLs are injected by ECS from Secrets Manager; tasks never hold static
+> AWS access keys. Per-process database roles: `atlas-api` uses `atlas_app` + `atlas_auth`, `atlas-mcp` uses
+> `atlas_app`, `atlas-worker`/`atlas-scheduler`/Python worker use `atlas_worker`, and the one-off
+> `atlas-migrate`/`atlas-provision` tasks use `atlas_migrator`. Future service-to-service calls must use IAM
+> SigV4 or mTLS, never a shared bearer secret.
+>
+> **Consequences:** IAM policies must be reviewed per service; adding a new process requires a new task role
+> and DB URL secret. Secrets are long-lived in Secrets Manager (rotation target 90 days, manual in the
+> sandbox) until automated rotation or RDS IAM auth is adopted. Logs and audit can attribute work to the
+> process workload name; cross-process authentication remains an interface (`identity.WorkloadIdentity`)
+> until a real internal call path exists. Implementation guidance and policy templates:
+> `backend/deploy/iam.md` and `backend/deploy/iam/`.
+>
+> **Final decision:** AWS ECS task roles per process, an environment-scoped execution role, Secrets
+> Manager-injected database credentials, no static AWS keys, no shared task role. RDS IAM database
+> authentication and automated rotation are deferred; revisit when internal service-to-service calls exist
+> or compliance requires eliminating long-lived database passwords.
+>
+> **Date finalized:** 2026-11-23.
 
 ### ADR-005 — Document extraction engine/provider
 
@@ -2163,14 +2198,14 @@ demand from the pipeline.
 
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-001 and ADR-002 are Accepted; the other eight ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002 and ADR-004 are Accepted; the other seven ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
 | ADR-001 | Cloud hosting provider | Accepted | **AWS** - accepted 2026-11-23: ECS Fargate, RDS PostgreSQL 16, ALB, ECR, Secrets Manager, IAM task roles; Cloudflare R2 for objects; sandbox region `eu-west-1` pending ADR-010 | ADR-010 (regions), commercial constraints | Resolved | Unblocks ADR-004/ADR-006 and infrastructure provisioning; runbook in `backend/deploy/aws.md` | Head of Engineering |
 | ADR-002 | Identity provider | Accepted | **WorkOS AuthKit** — accepted 2026-11-21 after the staging sandbox E2E (hosted sign-in, JIT user, invitation, session) | ADR-001; interacts with ADR-009 | Resolved | Production auth can proceed; enterprise SSO/SCIM configuration remains per-customer | Security Lead |
 | ADR-003 | First ERP/accounting connector | Open | Mock connector + document-inbox connector behind the shared contract | Pilot customer, Phase 4 contract | Before Phase 10 implementation | Blocks real ingestion/write-back validation and pilot scope | Product Lead |
-| ADR-004 | Workload identity mechanism | Open | Cloud-native workload identity where sufficient; no SPIFFE without requirement | ADR-001 | Interface by Phase 2 gate; final before production workload auth (Phase 10) | Blocks scoped production credentials and least-privilege DB roles | Security Lead with Platform Lead |
+| ADR-004 | Workload identity mechanism | Accepted | **ECS task roles per process** - accepted 2026-11-23: no shared task role, environment execution role for ECR/logs/Secrets Manager, per-process DB roles, no static AWS keys; RDS IAM auth/automated rotation deferred | ADR-001 | Resolved | Unblocks least-privilege production credentials; guidance in `backend/deploy/iam.md` | Security Lead with Platform Lead |
 | ADR-005 | Document extraction engine/provider | Open | Provider-independent interface + mock; benchmark before selection | Phase 6 corpus, ADR-007, ADR-010 | Benchmark by Phase 6 gate; selection before Phase 10 production extraction | Blocks production extraction quality, cost and privacy review | Head of Engineering with Product Lead |
 | ADR-006 | Observability backend | Open | Vendor-neutral OpenTelemetry; backend chosen with hosting | ADR-001 | Before staging/production observability provisioning (Phase 10) | Blocks durable telemetry, alerting and security monitoring in pilot | Platform Lead |
 | ADR-007 | Retention and legal-hold policy | Open | Conservative defaults + organization policies; governed deletion; preserve required audit | Contracts, ADR-005, ADR-010 | Before accepting real customer documents (Phase 10 gate) | Blocks pilot data agreements, deletion workflows and storage lifecycle rules | Compliance Lead |
