@@ -6,6 +6,7 @@ package governance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,13 +14,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"atlas/internal/audit"
+	"atlas/internal/jobs"
 )
 
+// ActionExecuteJob is the job type that runs approved operations.
+const ActionExecuteJob = "action.execute"
+
+// ErrOperationTerminal is returned when a terminal operation is mutated.
+var ErrOperationTerminal = errors.New("operation is already terminal")
+
+// defaultApprovalTTL applies when the active policy does not set a shorter TTL.
+const defaultApprovalTTL = 7 * 24 * time.Hour
+
 // Service provides policy, approval and operation operations.
-type Service struct{ pool *pgxpool.Pool }
+type Service struct {
+	pool  *pgxpool.Pool
+	queue *jobs.Queue
+}
 
 // NewService constructs the governance service.
-func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+func NewService(pool *pgxpool.Pool, queue *jobs.Queue) *Service {
+	return &Service{pool: pool, queue: queue}
+}
 
 // Decision is the policy outcome for one requested action.
 type Decision struct {
@@ -32,6 +48,7 @@ type policyConfig struct {
 	AllowActions         []string `json:"allow_actions"`
 	ApprovalActions      []string `json:"approval_actions"`
 	AmountThresholdMinor int64    `json:"amount_threshold_minor"`
+	ApprovalTTLMinutes   int64    `json:"approval_ttl_minutes"`
 }
 
 // Evaluate applies the latest active policy. No active policy means deny.
@@ -68,14 +85,34 @@ func (s *Service) Evaluate(ctx context.Context, organizationID, action string, a
 	return &Decision{Allowed: false, Reason: "action not permitted by policy"}, nil
 }
 
-// RequestApproval creates a pending approval.
+// RequestApproval creates a pending approval. The expiry comes from the active
+// policy's approval_ttl_minutes, or a conservative default when unset.
 func (s *Service) RequestApproval(ctx context.Context, organizationID, operationType, objectType, objectID, requestedBy string) (string, error) {
 	var id string
 	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		ttl := defaultApprovalTTL
+		var raw []byte
+		err := tx.QueryRow(ctx, `
+			SELECT config FROM policies WHERE organization_id = $1 AND status = 'active'
+			ORDER BY version DESC LIMIT 1`, organizationID).Scan(&raw)
+		switch {
+		case err == nil:
+			var config policyConfig
+			if err := json.Unmarshal(raw, &config); err != nil {
+				return fmt.Errorf("decode policy: %w", err)
+			}
+			if config.ApprovalTTLMinutes > 0 {
+				ttl = time.Duration(config.ApprovalTTLMinutes) * time.Minute
+			}
+		case errors.Is(err, pgx.ErrNoRows):
+		default:
+			return err
+		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO approvals (organization_id, operation_type, object_type, object_id, requested_by)
-			VALUES ($1, $2, $3, $4, nullif($5, '')::uuid) RETURNING id`,
-			organizationID, operationType, objectType, objectID, requestedBy).Scan(&id); err != nil {
+			INSERT INTO approvals (organization_id, operation_type, object_type, object_id, requested_by, expires_at)
+			VALUES ($1, $2, $3, $4, nullif($5, '')::uuid,
+			        now() + ($6::bigint * interval '1 second')) RETURNING id`,
+			organizationID, operationType, objectType, objectID, requestedBy, int64(ttl/time.Second)).Scan(&id); err != nil {
 			return err
 		}
 		return audit.Record(ctx, tx, audit.Event{
@@ -113,11 +150,21 @@ func (s *Service) Decide(ctx context.Context, organizationID, approvalID, decide
 	})
 }
 
-// StartOperation records an idempotent operation. A referenced approval must
-// already be approved. Duplicate idempotency keys return the existing operation.
+// StartOperation records an idempotent operation and enqueues its execution job
+// in the same transaction. A referenced approval must already be approved.
+// Duplicate idempotency keys return the existing operation without enqueueing.
 func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID, operationType, idempotencyKey string, payload []byte) (string, bool, error) {
 	if idempotencyKey == "" {
 		return "", false, fmt.Errorf("idempotency key is required")
+	}
+	if s.queue == nil {
+		return "", false, fmt.Errorf("job queue is not configured")
+	}
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	if !json.Valid(payload) {
+		return "", false, fmt.Errorf("operation payload is not valid JSON")
 	}
 	var id string
 	created := false
@@ -138,7 +185,7 @@ func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID
 			VALUES ($1, nullif($2, '')::uuid, $3, $4, $5)
 			ON CONFLICT (organization_id, idempotency_key) DO NOTHING RETURNING id`,
 			organizationID, approvalID, operationType, idempotencyKey, payload).Scan(&id)
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return tx.QueryRow(ctx, `
 				SELECT id FROM operations WHERE organization_id = $1 AND idempotency_key = $2`,
 				organizationID, idempotencyKey).Scan(&id)
@@ -147,19 +194,30 @@ func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID
 			return err
 		}
 		created = true
-		return nil
+		jobPayload, err := json.Marshal(map[string]string{
+			"organization_id": organizationID,
+			"operation_id":    id,
+		})
+		if err != nil {
+			return fmt.Errorf("encode action.execute payload: %w", err)
+		}
+		if _, _, err := s.queue.Enqueue(ctx, tx, jobs.NewJob{
+			OrganizationID: organizationID,
+			Type:           ActionExecuteJob,
+			SchemaVersion:  1,
+			Payload:        jobPayload,
+			IdempotencyKey: id,
+		}); err != nil {
+			return fmt.Errorf("enqueue operation: %w", err)
+		}
+		return audit.Record(ctx, tx, audit.Event{
+			OrganizationID: organizationID, ActorKind: "system", Action: "operation.started",
+			ResourceType: "operation", ResourceID: id, Decision: "allow",
+			Metadata: map[string]any{"type": operationType},
+		})
 	})
 	if err != nil {
 		return "", false, err
-	}
-	if created {
-		_ = s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
-			return audit.Record(ctx, tx, audit.Event{
-				OrganizationID: organizationID, ActorKind: "system", Action: "operation.started",
-				ResourceType: "operation", ResourceID: id, Decision: "allow",
-				Metadata: map[string]any{"type": operationType},
-			})
-		})
 	}
 	return id, created, nil
 }
@@ -179,15 +237,37 @@ func (s *Service) FinishOperation(ctx context.Context, organizationID, operation
 			return err
 		}
 		if tag.RowsAffected() != 1 {
-			return fmt.Errorf("operation is already terminal")
+			return fmt.Errorf("%w: operation %s", ErrOperationTerminal, operationID)
 		}
-		_, err = tx.Exec(ctx, `
+		if _, err = tx.Exec(ctx, `
 			INSERT INTO operation_attempts (organization_id, operation_id, attempt, status, error, finished_at)
 			VALUES ($1, $2,
 				(SELECT coalesce(max(attempt), 0) + 1 FROM operation_attempts WHERE operation_id = $2),
-				$3, nullif($4, ''), now())`, organizationID, operationID, status, errorText)
-		return err
+				$3, nullif($4, ''), now())`, organizationID, operationID, status, errorText); err != nil {
+			return err
+		}
+		metadata := map[string]any{}
+		if errorText != "" {
+			metadata["error"] = errorText
+		}
+		return audit.Record(ctx, tx, audit.Event{
+			OrganizationID: organizationID, ActorKind: "system", Action: "operation." + status,
+			ResourceType: "operation", ResourceID: operationID,
+			Decision: map[string]string{"succeeded": "allow", "failed": "deny", "cancelled": "deny"}[status],
+			Metadata: metadata,
+		})
 	})
+}
+
+// ExpireApprovals marks every pending approval past its expiry as expired and
+// records an audit event per approval. The cross-organization query runs in a
+// security-definer function so no tenant context is bypassed by the caller.
+func (s *Service) ExpireApprovals(ctx context.Context) (int, error) {
+	var expired int
+	if err := s.pool.QueryRow(ctx, `SELECT atlas_expire_approvals()`).Scan(&expired); err != nil {
+		return 0, fmt.Errorf("expire approvals: %w", err)
+	}
+	return expired, nil
 }
 
 func (s *Service) withOrg(ctx context.Context, organizationID string, fn func(pgx.Tx) error) error {

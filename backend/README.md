@@ -221,6 +221,29 @@ Migration `0012_reconciliation` adds versioned `reconciliation_runs`, evidence-b
 matching: invoice total vs linked PO totals, currency checks, split invoices across multiple POs, and explicit
 `no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. Line-level matching now supports partial-quantity allocation across PO lines (FIFO, no over-consumption), with `invoice_line_partial` and `delivery_shortfall` findings. No model authority; runs are reproducible.
 
+## Governance and execution (Phase 8, in progress)
+
+Migration `0014_governance` adds versioned `policies`, `approvals`, `operations` and `operation_attempts`
+(RLS-scoped). Migration `0015_approval_expiry` adds an `atlas_expire_approvals()` security-definer sweep and a
+partial expiry index. `internal/governance` evaluates the latest active policy deny-by-default (`allow_actions`,
+`approval_actions`, `amount_threshold_minor`), creates approvals with a policy TTL
+(`approval_ttl_minutes`, default 7 days), records decisions/expiry with audit, and keeps operations idempotent.
+
+- `POST /v1/approvals`, `POST /v1/approvals/{id}/decision`, `PUT/GET /v1/policies`,
+  `GET /v1/operations/{id}` require `approvals:request` (admin/member), `approvals:decide` (admin) or the
+  organization read/manage permissions. There is still no human `actions.execute` permission.
+- `StartOperation` requires an approved approval, inserts the operation and enqueues `action.execute` in one
+  transaction. Duplicate idempotency keys return the existing operation without enqueueing.
+- `internal/execution` claims the operation (pending/running → running), selects an adapter by operation type
+  and writes the terminal outcome through governance. Re-delivery of a terminal operation returns the recorded
+  result without repeating the effect. Transient adapter errors retry through the job queue; the final attempt
+  marks the operation failed. `connector.write` uses `ingestion.ExecuteWrite`, which decrypts the integration
+  credential per call and passes the operation ID as the provider idempotency key. The mock connector writes
+  only when the integration setting `allow_writes` is true; otherwise the path fails closed.
+- `internal/audit` records `operation.started`, `operation.succeeded|failed|cancelled` and
+  `approval.expired`. `cmd/atlas-scheduler` runs the expiry sweep every `APPROVAL_EXPIRY_MS` (default 60000).
+  Remaining Phase 8 work: UI surfacing.
+
 ## Canonical model and ontology (Phase 6, complete)
 
 Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,
@@ -269,18 +292,20 @@ Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `out
   the outbox (`EnqueueEvent` in the business transaction, `Dispatch`).
 - Lease-expired jobs are reaped by `atlas_reap_expired_leases`; the abandoned attempt is recorded as
   `lease_expired`. Outbox rows are claimed with `atlas_claim_outbox`; dedupe keys make retries harmless.
-- `cmd/atlas-worker` claims jobs, runs registered handlers (`system.noop` today) and records results.
-  `cmd/atlas-scheduler` dispatches outbox events to jobs and reaps leases.
+- `cmd/atlas-worker` claims jobs, runs registered handlers (`system.noop`, `reconciliation.run`,
+  `document.validate`, `connector.sync`, `action.execute`) and records results. `cmd/atlas-scheduler`
+  dispatches outbox events to jobs, reaps leases and sweeps expired approvals.
 - Worker/scheduler env: `WORKER_DATABASE_URL` (fell back to `DATABASE_URL`), `WORKER_ID`, `JOB_LEASE_SECONDS`,
-  `JOB_POLL_MS`, `OUTBOX_POLL_MS`, `LEASE_REAP_MS`. Cross-organization queue access is only through the
-  security-definer functions granted to `atlas_worker`.
+  `JOB_POLL_MS`, `OUTBOX_POLL_MS`, `LEASE_REAP_MS`, `APPROVAL_EXPIRY_MS`. Cross-organization queue/approval
+  access is only through the security-definer functions granted to `atlas_worker`.
 
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
 `integration_credentials`, `sync_runs`, `sync_cursors`, `source_records`, `normalized_records`,
 `provenance_records`, `audit_events`, `documents`, `document_versions`, `jobs`, `job_attempts`, `job_results`,
-`outbox_events`) use PostgreSQL RLS keyed on `app.organization_id`, set per transaction by
+`outbox_events`, `policies`, `approvals`, `operations`, `operation_attempts`) use PostgreSQL RLS keyed on
+`app.organization_id`, set per transaction by
 `internal/tenancy`. `users` is a global identity record and `sessions` is read before an organization context
 exists; both remain intentionally **not** RLS-protected. They are protected by separated database roles and a
 narrow read function instead:

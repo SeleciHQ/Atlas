@@ -135,3 +135,4 @@ GRANT EXECUTE ON FUNCTION atlas_memberships_for_user(uuid) TO atlas_auth;
 GRANT EXECUTE ON FUNCTION atlas_claim_job(text, integer) TO atlas_worker;
 GRANT EXECUTE ON FUNCTION atlas_reap_expired_leases() TO atlas_worker;
 GRANT EXECUTE ON FUNCTION atlas_claim_outbox(integer) TO atlas_worker;
+GRANT EXECUTE ON FUNCTION atlas_expire_approvals() TO atlas_worker;

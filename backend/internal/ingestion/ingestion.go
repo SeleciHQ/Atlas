@@ -94,11 +94,8 @@ type integrationRow struct {
 	settings map[string]any
 }
 
-// RunSync executes a connector sync for all supported objects.
-func (s *Service) RunSync(ctx context.Context, organizationID, integrationID string, maxPages int) (*Summary, error) {
-	if maxPages <= 0 {
-		maxPages = 25
-	}
+// integration loads integration metadata for one organization.
+func (s *Service) integration(ctx context.Context, organizationID, integrationID string) (integrationRow, error) {
 	var integration integrationRow
 	var rawSettings []byte
 	err := tenancy.WithOrganizationTx(ctx, s.pool, organizationID, func(tx pgx.Tx) error {
@@ -108,10 +105,22 @@ func (s *Service) RunSync(ctx context.Context, organizationID, integrationID str
 			Scan(&integration.provider, &integration.kind, &rawSettings)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("load integration: %w", err)
+		return integrationRow{}, fmt.Errorf("load integration: %w", err)
 	}
 	if len(rawSettings) > 0 {
 		_ = json.Unmarshal(rawSettings, &integration.settings)
+	}
+	return integration, nil
+}
+
+// RunSync executes a connector sync for all supported objects.
+func (s *Service) RunSync(ctx context.Context, organizationID, integrationID string, maxPages int) (*Summary, error) {
+	if maxPages <= 0 {
+		maxPages = 25
+	}
+	integration, err := s.integration(ctx, organizationID, integrationID)
+	if err != nil {
+		return nil, err
 	}
 
 	credentials, err := s.credentials(ctx, organizationID, integrationID)
@@ -255,6 +264,35 @@ func (s *Service) persistPage(ctx context.Context, organizationID, integrationID
 		}
 		return nil
 	})
+}
+
+// ExecuteWrite performs one governed external write through the integration's
+// connector. Credentials are decrypted for this call only; the operation ID is
+// supplied as the provider-facing idempotency key.
+func (s *Service) ExecuteWrite(ctx context.Context, organizationID, integrationID string, operation connectors.WriteOperation) (connectors.WriteResult, error) {
+	if operation.IdempotencyKey == "" {
+		return connectors.WriteResult{}, fmt.Errorf("write idempotency key is required")
+	}
+	integration, err := s.integration(ctx, organizationID, integrationID)
+	if err != nil {
+		return connectors.WriteResult{}, err
+	}
+	credentials, err := s.credentials(ctx, organizationID, integrationID)
+	if err != nil {
+		return connectors.WriteResult{}, err
+	}
+	connector, err := s.registry.Open(integration.provider)
+	if err != nil {
+		return connectors.WriteResult{}, err
+	}
+	cfg := connectors.ConnectionConfig{
+		OrganizationID: organizationID, IntegrationID: integrationID,
+		Provider: integration.provider, Settings: integration.settings, Credentials: credentials,
+	}
+	if err := connector.ValidateConnection(ctx, cfg); err != nil {
+		return connectors.WriteResult{}, fmt.Errorf("validate connection: %w", err)
+	}
+	return connector.ExecuteWrite(ctx, cfg, operation)
 }
 
 func (s *Service) credentials(ctx context.Context, organizationID, integrationID string) ([]byte, error) {

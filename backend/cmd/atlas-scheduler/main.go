@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"atlas/internal/governance"
 	"atlas/internal/jobs"
 	"atlas/internal/platform/db"
 )
@@ -35,6 +36,7 @@ func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "atlas-scheduler")
 	outboxPoll := envDuration("OUTBOX_POLL_MS", 2000, time.Millisecond)
 	reapInterval := envDuration("LEASE_REAP_MS", 30000, time.Millisecond)
+	expiryInterval := envDuration("APPROVAL_EXPIRY_MS", 60000, time.Millisecond)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -45,9 +47,12 @@ func run() error {
 	}
 	defer pool.Close()
 	queue := jobs.NewQueue(pool)
+	governanceService := governance.NewService(pool, queue)
 
-	logger.Info("scheduler_started", "outbox_poll", outboxPoll.String(), "reap_interval", reapInterval.String())
+	logger.Info("scheduler_started", "outbox_poll", outboxPoll.String(),
+		"reap_interval", reapInterval.String(), "approval_expiry_interval", expiryInterval.String())
 	lastReap := time.Time{}
+	lastExpiry := time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -71,6 +76,15 @@ func run() error {
 				logger.Warn("lease_reap_failed", "error", err.Error())
 			} else if reaped > 0 {
 				logger.Info("leases_reaped", "count", reaped)
+			}
+		}
+
+		if time.Since(lastExpiry) >= expiryInterval {
+			lastExpiry = time.Now()
+			if expired, err := governanceService.ExpireApprovals(ctx); err != nil {
+				logger.Warn("approval_expiry_failed", "error", err.Error())
+			} else if expired > 0 {
+				logger.Info("approvals_expired", "count", expired)
 			}
 		}
 

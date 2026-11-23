@@ -108,8 +108,21 @@ func (Mock) FetchDocument(context.Context, ConnectionConfig, DocumentRef) (Docum
 	return DocumentStream{}, fmt.Errorf("mock connector does not provide documents")
 }
 
-func (Mock) ExecuteWrite(context.Context, ConnectionConfig, WriteOperation) (WriteResult, error) {
-	return WriteResult{}, fmt.Errorf("external writes are not permitted in Phase 4")
+// ExecuteWrite is fail-closed unless the integration explicitly enables writes.
+// It returns a deterministic provider reference so callers can exercise the
+// governed write path in development and tests.
+func (Mock) ExecuteWrite(_ context.Context, cfg ConnectionConfig, op WriteOperation) (WriteResult, error) {
+	allow, _ := cfg.Settings["allow_writes"].(bool)
+	if !allow {
+		return WriteResult{}, fmt.Errorf("mock connector writes are disabled")
+	}
+	if op.Kind == "" {
+		return WriteResult{}, fmt.Errorf("write kind is required")
+	}
+	if op.IdempotencyKey == "" {
+		return WriteResult{}, fmt.Errorf("write idempotency key is required")
+	}
+	return WriteResult{ExternalID: "mock-" + op.IdempotencyKey, Status: "accepted"}, nil
 }
 
 // DocumentInbox is the intake connector. Uploads are handled by the documents

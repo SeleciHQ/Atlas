@@ -1050,6 +1050,15 @@ that cannot be bypassed.
 - Policy/operation model documented and stable enough for agent exposure.
 - Phase 9 plan prepared.
 
+**Backend status note (2026-11-23):** governance policy/approvals/operations endpoints are complete, and
+`StartOperation` now enqueues `action.execute` in the same transaction. The worker claims approved operations
+through `internal/execution`, resolves an operation-type adapter (`connector.write` uses
+`ingestion.ExecuteWrite`, which is fail-closed until an integration opts in), records terminal attempts and
+audits every outcome; transient failures retry through the job queue and are closed on the final attempt.
+Migration `0015_approval_expiry` adds a cross-organization expiry sweep invoked by the scheduler
+(`APPROVAL_EXPIRY_MS`, default 60s), and approvals now carry policy-driven TTLs
+(`approval_ttl_minutes`, default 7 days). Remaining Phase 8 work is UI surfacing plus the Phase 9 plan.
+
 **Explicitly deferred:**
 
 - Autonomous payment execution (architecture non-goal).

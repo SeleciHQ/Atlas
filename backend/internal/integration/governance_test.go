@@ -5,13 +5,14 @@ import (
 	"testing"
 
 	"atlas/internal/governance"
+	"atlas/internal/jobs"
 )
 
 func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	admin, app, _ := setupTenantSchema(t)
 	organizationID := seedQueueOrganization(t, admin)
 	ctx := context.Background()
-	service := governance.NewService(app)
+	service := governance.NewService(app, jobs.NewQueue(app))
 
 	decision, err := service.Evaluate(ctx, organizationID, "payment.execute", 1000)
 	if err != nil || decision.Allowed {
@@ -68,5 +69,56 @@ func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	}
 	if err := service.FinishOperation(ctx, organizationID, operationID, "succeeded", `{}`, ""); err == nil {
 		t.Fatal("terminal operation was re-finished")
+	}
+}
+
+func TestApprovalExpirySweep(t *testing.T) {
+	admin, _, _ := setupTenantSchema(t)
+	worker := connectRole(t, workerRole)
+	organizationA := seedQueueOrganization(t, admin)
+	organizationB := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	service := governance.NewService(worker, jobs.NewQueue(worker))
+
+	insert := func(organizationID, objectID, offset string) string {
+		t.Helper()
+		var id string
+		if err := admin.QueryRow(ctx, `
+			INSERT INTO approvals (organization_id, operation_type, object_type, object_id, expires_at)
+			VALUES ($1, 'supplier.followup', 'invoice', $2, now() + $3::interval)
+			RETURNING id`, organizationID, objectID, offset).Scan(&id); err != nil {
+			t.Fatalf("insert approval: %v", err)
+		}
+		return id
+	}
+	expiredA := insert(organizationA, "inv-a", "-1 hour")
+	expiredB := insert(organizationB, "inv-b", "-1 minute")
+	liveA := insert(organizationA, "inv-c", "+1 hour")
+
+	expired, err := service.ExpireApprovals(ctx)
+	if err != nil || expired != 2 {
+		t.Fatalf("expire approvals = %d, %v", expired, err)
+	}
+	status := func(id string) string {
+		t.Helper()
+		var value string
+		if err := admin.QueryRow(ctx, `SELECT status FROM approvals WHERE id = $1`, id).Scan(&value); err != nil {
+			t.Fatalf("read approval %s: %v", id, err)
+		}
+		return value
+	}
+	if status(expiredA) != "expired" || status(expiredB) != "expired" || status(liveA) != "pending" {
+		t.Fatalf("statuses = %s/%s/%s", status(expiredA), status(expiredB), status(liveA))
+	}
+	var audited int
+	if err := admin.QueryRow(ctx, `
+		SELECT count(*) FROM audit_events WHERE action = 'approval.expired'`).Scan(&audited); err != nil {
+		t.Fatalf("count audit: %v", err)
+	}
+	if audited != 2 {
+		t.Fatalf("approval.expired audit rows = %d, want 2", audited)
+	}
+	if again, err := service.ExpireApprovals(ctx); err != nil || again != 0 {
+		t.Fatalf("second sweep = %d, %v", again, err)
 	}
 }

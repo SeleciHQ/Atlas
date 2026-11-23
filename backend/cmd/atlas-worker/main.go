@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"atlas/internal/connectors"
+	"atlas/internal/execution"
 	"atlas/internal/extraction"
+	"atlas/internal/governance"
 	"atlas/internal/ingestion"
 	"atlas/internal/jobs"
 	"atlas/internal/platform/db"
@@ -58,6 +60,8 @@ func run() error {
 	}
 	defer pool.Close()
 	queue := jobs.NewQueue(pool)
+	governanceService := governance.NewService(pool, queue)
+	executionRegistry := execution.NewRegistry()
 
 	extractionService := extraction.NewService(pool, 0.8)
 	reconciliationService := reconciliation.NewService(pool)
@@ -106,6 +110,7 @@ func run() error {
 		registry.Register("mock", connectors.NewMock)
 		registry.Register("document_inbox", connectors.NewDocumentInbox)
 		ingestionService := ingestion.NewService(pool, registry, sealer)
+		executionRegistry.Register(execution.TypeConnectorWrite, execution.NewConnectorWriteAdapter(ingestionService))
 		handlers["connector.sync"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
 			var request struct {
 				OrganizationID string `json:"organization_id"`
@@ -125,6 +130,30 @@ func run() error {
 		}
 	} else {
 		logger.Warn("connector_sync_disabled", "detail", "set ATLAS_SECRET_KEY to enable connector jobs")
+	}
+
+	executionService := execution.NewService(pool, governanceService, executionRegistry)
+	handlers[governance.ActionExecuteJob] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
+		var request struct {
+			OrganizationID string `json:"organization_id"`
+			OperationID    string `json:"operation_id"`
+		}
+		if err := json.Unmarshal(job.Payload, &request); err != nil {
+			return nil, fmt.Errorf("decode action.execute payload: %w", err)
+		}
+		if request.OrganizationID == "" || request.OperationID == "" {
+			return nil, fmt.Errorf("action.execute payload requires organization_id and operation_id")
+		}
+		result, err := executionService.Execute(ctx, request.OrganizationID, request.OperationID)
+		if err != nil {
+			if job.Attempts >= job.MaxAttempts {
+				if failErr := executionService.Fail(ctx, request.OrganizationID, request.OperationID, err); failErr != nil {
+					logger.Error("operation_fail_record_failed", "operation_id", request.OperationID, "error", failErr.Error())
+				}
+			}
+			return nil, err
+		}
+		return result, nil
 	}
 
 	logger.Info("worker_started", "lease", lease.String(), "poll", poll.String())

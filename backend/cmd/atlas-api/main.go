@@ -167,7 +167,7 @@ func run() error {
 		Integrations:   integrationService,
 		Queue:          queue,
 		Reconciliation: reconciliation.NewService(pool),
-		Governance:     governance.NewService(pool),
+		Governance:     governance.NewService(pool, queue),
 		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),
