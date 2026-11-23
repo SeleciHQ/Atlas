@@ -107,3 +107,19 @@ func getPolicyHandler(deps Deps) http.HandlerFunc {
 		WriteJSON(w, http.StatusOK, map[string]any{"policy": json.RawMessage(policy)})
 	}
 }
+
+func getOperationHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok || deps.Governance == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "governance_unavailable", "Governance is not configured."))
+			return
+		}
+		operation, err := deps.Governance.GetOperation(r.Context(), principal.OrganizationID, chi.URLParam(r, "operationID"))
+		if err != nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindNotFound, "operation_not_found", "Operation not found."))
+			return
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"operation": operation})
+	}
+}

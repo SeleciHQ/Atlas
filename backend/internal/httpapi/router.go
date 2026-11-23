@@ -105,6 +105,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
@@ -115,6 +117,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
@@ -129,6 +133,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
@@ -139,6 +145,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).
@@ -153,6 +161,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/reconciliation-runs/{runID}", getReconciliationRunHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionApprovalsRequest)).
@@ -163,6 +173,8 @@ func NewRouter(deps Deps) http.Handler {
 				Put("/policies", setPolicyHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
 				Get("/policies", getPolicyHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/operations/{operationID}", getOperationHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionReconciliationRead)).
 				Get("/invoices/{invoiceID}/reconciliation-runs", listReconciliationRunsHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionIntegrationsWrite)).

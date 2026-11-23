@@ -62,6 +62,10 @@ func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	if err := service.FinishOperation(ctx, organizationID, operationID, "succeeded", `{"reference":"ext-1"}`, ""); err != nil {
 		t.Fatalf("finish: %v", err)
 	}
+	operation, err := service.GetOperation(ctx, organizationID, operationID)
+	if err != nil || operation.Status != "succeeded" || string(operation.Result) != `{"reference": "ext-1"}` {
+		t.Fatalf("operation read = %+v %v", operation, err)
+	}
 	if err := service.FinishOperation(ctx, organizationID, operationID, "succeeded", `{}`, ""); err == nil {
 		t.Fatal("terminal operation was re-finished")
 	}

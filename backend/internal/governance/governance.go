@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -241,4 +242,33 @@ func (s *Service) ActivePolicy(ctx context.Context, organizationID string) (json
 		return nil, err
 	}
 	return raw, nil
+}
+
+// Operation is the operation read model.
+type Operation struct {
+	ID             string          `json:"id"`
+	Type           string          `json:"type"`
+	Status         string          `json:"status"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	Result         json.RawMessage `json:"result,omitempty"`
+	LastError      *string         `json:"last_error,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+}
+
+// GetOperation returns one operation.
+func (s *Service) GetOperation(ctx context.Context, organizationID, operationID string) (*Operation, error) {
+	var operation Operation
+	var result []byte
+	err := s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `
+			SELECT id, type, status, idempotency_key, result, last_error, created_at
+			FROM operations WHERE organization_id = $1 AND id = $2`,
+			organizationID, operationID).Scan(&operation.ID, &operation.Type, &operation.Status,
+			&operation.IdempotencyKey, &result, &operation.LastError, &operation.CreatedAt)
+	})
+	if err != nil {
+		return nil, err
+	}
+	operation.Result = result
+	return &operation, nil
 }
