@@ -77,6 +77,12 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 		Governance: governanceService,
 	})
 
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if health.Code != http.StatusOK {
+		t.Fatalf("MCP health status = %d", health.Code)
+	}
+
 	supplier, err := canon.CreateSupplier(ctx, tenants.OrganizationA, "MCP Supplies", "EUR")
 	if err != nil {
 		t.Fatalf("create supplier: %v", err)

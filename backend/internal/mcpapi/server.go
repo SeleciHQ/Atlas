@@ -93,6 +93,12 @@ type toolResult struct {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/healthz" && r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok","service":"atlas-mcp"}` + "\n"))
+		return
+	}
 	if r.Method == http.MethodDelete {
 		h.terminateSession(w, r)
 		return

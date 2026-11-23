@@ -1821,6 +1821,36 @@ container runtime limits (long-running workers, concurrency); workload identity 
 privilege; regional availability and data-residency commitments; secret manager and KMS integration; egress
 and networking model; cost at pilot and projected scale; observability integration effort.
 
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** Atlas needs managed containers, managed PostgreSQL 16, private networking, secrets
+> management and per-process workload identity, while keeping Cloudflare R2 for objects and WorkOS for
+> identity. The processes include long-lived polling workers, an HTTP API/MCP pair and one-off migration tasks.
+>
+> **Options considered:** (a) AWS ECS on Fargate + RDS + Secrets Manager + IAM task roles; (b) Google Cloud
+> Run/GKE Autopilot + Cloud SQL; (c) Azure Container Apps + Flexible Server; (d) self-managed Kubernetes on a
+> generic provider. PaaS-only options were rejected because they do not cover long-lived workers and
+> enterprise networking without added services. Google Cloud Run alone does not run the polling workers
+> without GKE, which conflicts with the deferred-Kubernetes direction; GKE Autopilot remains viable but adds
+> cluster surface. Self-managed Kubernetes was rejected for v0 operational load.
+>
+> **Recommendation:** AWS. ECS Fargate runs every Go process and the Python worker without cluster
+> operations; RDS provides managed PostgreSQL 16 with PITR; IAM task roles give each process a distinct
+> workload identity; Secrets Manager holds database URLs, WorkOS keys, R2 keys and `ATLAS_SECRET_KEY`; ALB
+> provides TLS and long-idle HTTP for MCP SSE. R2 remains the object store over its S3-compatible API.
+>
+> **Consequences:** More assembly than a PaaS (ALB, VPC, task definitions, ECR, IAM), and R2 egress plus
+> WorkOS calls require NAT egress. Region choice is still governed by ADR-010; the sandbox uses `eu-west-1`
+> and makes no residency commitment. ADR-004 must map the four database roles to ECS task roles; ADR-006
+> starts with CloudWatch Logs and a neutral OpenTelemetry pipeline. Deployment runbook:
+> `backend/deploy/aws.md`.
+>
+> **Final decision:** AWS is the primary hosting platform: ECS Fargate for `atlas-api`, `atlas-mcp`,
+> `atlas-worker`, `atlas-scheduler`, the Python worker and one-off migration/provisioning tasks; RDS for
+> PostgreSQL; ALB, ECR, Secrets Manager and IAM task roles; Cloudflare R2 for objects.
+>
+> **Date finalized:** 2026-11-23.
+
 ### ADR-002 — Identity provider
 
 **What needs to be decided.** The managed, OIDC-compatible identity provider for human authentication,
@@ -2133,11 +2163,11 @@ demand from the pipeline.
 
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-002 is Accepted; the other nine ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001 and ADR-002 are Accepted; the other eight ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
-| ADR-001 | Cloud hosting provider | Open | Managed containers, managed PostgreSQL, workload identity, private networking; no vendor chosen | ADR-010 (regions), commercial constraints | Before production infrastructure provisioning; Phase 10 gate | Blocks production deployment, ADR-004 and ADR-006 | Head of Engineering |
+| ADR-001 | Cloud hosting provider | Accepted | **AWS** - accepted 2026-11-23: ECS Fargate, RDS PostgreSQL 16, ALB, ECR, Secrets Manager, IAM task roles; Cloudflare R2 for objects; sandbox region `eu-west-1` pending ADR-010 | ADR-010 (regions), commercial constraints | Resolved | Unblocks ADR-004/ADR-006 and infrastructure provisioning; runbook in `backend/deploy/aws.md` | Head of Engineering |
 | ADR-002 | Identity provider | Accepted | **WorkOS AuthKit** — accepted 2026-11-21 after the staging sandbox E2E (hosted sign-in, JIT user, invitation, session) | ADR-001; interacts with ADR-009 | Resolved | Production auth can proceed; enterprise SSO/SCIM configuration remains per-customer | Security Lead |
 | ADR-003 | First ERP/accounting connector | Open | Mock connector + document-inbox connector behind the shared contract | Pilot customer, Phase 4 contract | Before Phase 10 implementation | Blocks real ingestion/write-back validation and pilot scope | Product Lead |
 | ADR-004 | Workload identity mechanism | Open | Cloud-native workload identity where sufficient; no SPIFFE without requirement | ADR-001 | Interface by Phase 2 gate; final before production workload auth (Phase 10) | Blocks scoped production credentials and least-privilege DB roles | Security Lead with Platform Lead |
@@ -2162,15 +2192,16 @@ When an ADR is finalized, append a completed decision record beneath it and chan
 
 Example of an open record (not yet accepted):
 
-> **ADR-001 — Cloud hosting provider — decision record**
-> **Context:** Atlas requires managed PostgreSQL, containerized processes, private networking, secret
-> management and workload identity across multiple process types; no provider has been chosen.
-> **Options considered:** the major managed cloud platforms (evaluated against the criteria in ADR-001); a
-> self-managed infrastructure alternative (not preferred for v0 operational load).
-> **Recommendation:** pending evaluation; see evidence criteria.
-> **Consequences:** selection affects ADR-004, ADR-006, ADR-010, cost and operations.
+> **ADR-003 — First ERP/accounting connector — decision record**
+> **Context:** Atlas needs a real connector for the Phase 10 sandbox pilot; no provider has been chosen and
+> the mock/document-inbox adapters are not sufficient for pilot evidence.
+> **Options considered:** the first pilot customer's ERP; a vendor sandbox with a supported API; a
+> file/CSV-based adapter over the document-inbox path, evaluated against the Phase 4 connector contract.
+> **Recommendation:** pending sandbox evaluation; see evidence criteria in ADR-003.
+> **Consequences:** the choice affects ingestion coverage, write-back validation, rate-limit behaviour and
+> pilot scope.
 > **Final decision:** Not made.
-> **Date finalized:** —
+> **Date finalized:** -
 
 ---
 

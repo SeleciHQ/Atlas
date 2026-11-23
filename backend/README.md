@@ -379,6 +379,15 @@ Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `out
   `JOB_POLL_MS`, `OUTBOX_POLL_MS`, `LEASE_REAP_MS`, `APPROVAL_EXPIRY_MS`. Cross-organization queue/approval
   access is only through the security-definer functions granted to `atlas_worker`.
 
+## Deployment (ADR-001: AWS)
+
+ADR-001 selects AWS. `backend/Dockerfile` builds every Go process with
+`--build-arg SERVICE=atlas-api|atlas-mcp|atlas-worker|atlas-scheduler|atlas-migrate|atlas-provision`;
+`backend/Dockerfile.python` packages the extraction worker. Images run as nonroot and include
+`/app/migrations` + `/app/scripts`. The full ECS/RDS/ALB/Secrets Manager runbook, environment matrix, deploy
+order and sandbox notes are in [`deploy/aws.md`](deploy/aws.md). The MCP service exposes `GET /healthz` for ALB
+health checks. The sandbox uses `eu-west-1`; the production region remains under ADR-010.
+
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,

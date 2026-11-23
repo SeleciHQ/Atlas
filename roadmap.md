@@ -1188,6 +1188,11 @@ evidence that the architecture holds under realistic conditions.
 **Prerequisites:** Phase 9 accepted; ADR-003 finalized (first connector); ADR-005 finalized (extraction
 provider); ADR-007 retention defaults agreed; ADR-010 residency decision made for the pilot region.
 
+**ADR status (2026-11-23):** ADR-001 (hosting) is **Accepted** — AWS ECS Fargate + RDS PostgreSQL, with the
+runbook in `backend/deploy/aws.md` and containers in `backend/Dockerfile*`. ADR-004 (workload identity) and
+ADR-006 (observability) are unblocked but still open. The Phase 10 sandbox will use realistic synthetic data
+rather than a live customer; prerequisites above still apply.
+
 **Implementation tasks:**
 
 - Implement the first real ERP/accounting connector behind the existing contract; validate against a sandbox
