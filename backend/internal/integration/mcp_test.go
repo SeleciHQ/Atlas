@@ -59,12 +59,10 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 	agents := agentaccess.NewService(app)
 	handler := mcpapi.NewHandler(mcpapi.Deps{
 		Logger:     testLogger(),
-		Pool:       app,
 		Agents:     agents,
 		Authorizer: authorization.NewService(),
 		Query:      query.NewService(app, canon, recon),
 		Governance: governanceService,
-		Queue:      queue,
 	})
 
 	supplier, err := canon.CreateSupplier(ctx, tenants.OrganizationA, "MCP Supplies", "EUR")
@@ -279,20 +277,27 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 	decodeBody(t, reconcile, &reconcileBody)
 	var reconcileEnvelope struct {
 		StructuredContent struct {
-			JobID string `json:"job_id"`
+			OperationID string `json:"operation_id"`
 		} `json:"structuredContent"`
 	}
-	if err := json.Unmarshal(reconcileBody.Result, &reconcileEnvelope); err != nil || reconcileEnvelope.StructuredContent.JobID == "" {
+	if err := json.Unmarshal(reconcileBody.Result, &reconcileEnvelope); err != nil || reconcileEnvelope.StructuredContent.OperationID == "" {
 		t.Fatalf("reconcile result = %s %v", reconcileBody.Result, err)
 	}
 	reconcileResult := reconcileEnvelope.StructuredContent
 	var jobType string
-	if err := admin.QueryRow(ctx, `SELECT type FROM jobs WHERE organization_id = $1 AND id = $2`,
-		tenants.OrganizationA, reconcileResult.JobID).Scan(&jobType); err != nil {
+	var jobPayload []byte
+	if err := admin.QueryRow(ctx, `
+		SELECT type, payload FROM jobs
+		WHERE organization_id = $1 AND payload->>'operation_id' = $2`,
+		tenants.OrganizationA, reconcileResult.OperationID).Scan(&jobType, &jobPayload); err != nil {
 		t.Fatalf("read reconciliation job: %v", err)
 	}
 	if jobType != "reconciliation.run" {
 		t.Fatalf("job type = %s", jobType)
+	}
+	operation, err := governanceService.GetOperation(ctx, tenants.OrganizationA, reconcileResult.OperationID)
+	if err != nil || operation.Status != "pending" || operation.Type != "reconciliation.run" {
+		t.Fatalf("reconciliation operation = %+v %v", operation, err)
 	}
 
 	followup := mcpPost(t, handler, issued.Token, "", map[string]any{

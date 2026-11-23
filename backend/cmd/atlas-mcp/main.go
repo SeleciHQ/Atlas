@@ -64,12 +64,10 @@ func run() error {
 	reconciliationService := reconciliation.NewService(pool)
 	handler := mcpapi.NewHandler(mcpapi.Deps{
 		Logger:     logger,
-		Pool:       pool,
 		Agents:     agentaccess.NewService(pool),
 		Authorizer: authorization.NewService(),
 		Query:      query.NewService(pool, canonicalService, reconciliationService),
 		Governance: governance.NewService(pool, queue),
-		Queue:      queue,
 	})
 
 	server := &http.Server{

@@ -3,14 +3,17 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"atlas/internal/canonical"
 	"atlas/internal/connectors"
 	"atlas/internal/execution"
 	"atlas/internal/governance"
 	"atlas/internal/ingestion"
 	"atlas/internal/jobs"
+	"atlas/internal/reconciliation"
 	"atlas/internal/secrets"
 )
 
@@ -119,6 +122,65 @@ func TestExecutionRunsApprovedOperationIdempotently(t *testing.T) {
 	}
 	if audited != 1 {
 		t.Fatalf("operation audit rows = %d, want 1", audited)
+	}
+}
+
+func TestReconciliationJobOperationLifecycle(t *testing.T) {
+	admin, app, _ := setupTenantSchema(t)
+	organizationID := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	canon := canonical.NewService(app)
+	supplier, err := canon.CreateSupplier(ctx, organizationID, "Recon Supplies", "EUR")
+	if err != nil {
+		t.Fatalf("create supplier: %v", err)
+	}
+	invoice, err := canon.CreateInvoice(ctx, organizationID, supplier.ID, "INV-OP-1", "EUR", 1200)
+	if err != nil {
+		t.Fatalf("create invoice: %v", err)
+	}
+	queue := jobs.NewQueue(app)
+	governanceService := governance.NewService(app, queue)
+	payload, _ := json.Marshal(map[string]string{"invoice_id": invoice.ID})
+
+	operationID, created, err := governanceService.StartJobOperation(ctx, organizationID,
+		"reconciliation.run", "reconciliation.run", "recon-op-1", payload)
+	if err != nil || !created {
+		t.Fatalf("start job operation = %s %v %v", operationID, created, err)
+	}
+	var jobPayload []byte
+	if err := admin.QueryRow(ctx, `
+		SELECT payload FROM jobs WHERE organization_id = $1 AND idempotency_key = $2`,
+		organizationID, operationID).Scan(&jobPayload); err != nil {
+		t.Fatalf("read job: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(jobPayload, &decoded); err != nil {
+		t.Fatalf("decode job payload: %v", err)
+	}
+	if decoded["operation_id"] != operationID || decoded["invoice_id"] != invoice.ID {
+		t.Fatalf("job payload = %v", decoded)
+	}
+	again, created, err := governanceService.StartJobOperation(ctx, organizationID,
+		"reconciliation.run", "reconciliation.run", "recon-op-1", payload)
+	if err != nil || created || again != operationID {
+		t.Fatalf("idempotent job operation = %s %v %v", again, created, err)
+	}
+	if _, _, err := governanceService.StartJobOperation(ctx, organizationID,
+		"reconciliation.run", "reconciliation.run", "recon-op-1", []byte(`{"invoice_id":"other"}`)); !errors.Is(err, governance.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting job operation error = %v", err)
+	}
+
+	result, err := reconciliation.NewService(app).Run(ctx, organizationID, invoice.ID)
+	if err != nil {
+		t.Fatalf("run reconciliation: %v", err)
+	}
+	encoded, _ := json.Marshal(result)
+	if err := governanceService.FinishOperation(ctx, organizationID, operationID, "succeeded", string(encoded), ""); err != nil {
+		t.Fatalf("finish operation: %v", err)
+	}
+	operation, err := governanceService.GetOperation(ctx, organizationID, operationID)
+	if err != nil || operation.Status != "succeeded" || len(operation.Attempts) != 1 {
+		t.Fatalf("operation = %+v %v", operation, err)
 	}
 }
 

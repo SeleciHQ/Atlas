@@ -1169,8 +1169,10 @@ tools (scope-checked; agent-attributed approvals) and JSON-RPC error mapping, sh
 reconciliation, governance and job services as REST. Template-based MCP resources expose invoice and
 reconciliation views with organization/scope enforcement, tool schemas are snapshotted in
 `internal/mcpapi/testdata/tools.json`, and REST parity includes
-`POST /v1/invoices/{id}/supplier-followups`. Next: session/SSE transport support, progress notifications,
-live client validation and the ADR-009 client matrix.
+`POST /v1/invoices/{id}/supplier-followups`. Reconciliation triggers now create idempotent
+`reconciliation.run` operations (REST `Idempotency-Key`, MCP tool key), and the worker completes them, so
+`get_operation_status` works for reconciliation as well as governed actions. Next: session/SSE transport
+support, progress notifications, live client validation and the ADR-009 client matrix.
 
 ---
 

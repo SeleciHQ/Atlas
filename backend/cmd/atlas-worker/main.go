@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -75,15 +76,32 @@ func run() error {
 		var request struct {
 			OrganizationID string `json:"organization_id"`
 			InvoiceID      string `json:"invoice_id"`
+			OperationID    string `json:"operation_id"`
 		}
 		if err := json.Unmarshal(job.Payload, &request); err != nil {
 			return nil, fmt.Errorf("decode reconciliation payload: %w", err)
 		}
 		result, err := reconciliationService.Run(ctx, request.OrganizationID, request.InvoiceID)
 		if err != nil {
+			if request.OperationID != "" && job.Attempts >= job.MaxAttempts {
+				if finishErr := governanceService.FinishOperation(ctx, request.OrganizationID, request.OperationID,
+					"failed", "", err.Error()); finishErr != nil && !errors.Is(finishErr, governance.ErrOperationTerminal) {
+					logger.Warn("operation_fail_record_failed", "operation_id", request.OperationID, "error", finishErr.Error())
+				}
+			}
 			return nil, err
 		}
-		return json.Marshal(result)
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return nil, err
+		}
+		if request.OperationID != "" {
+			if finishErr := governanceService.FinishOperation(ctx, request.OrganizationID, request.OperationID,
+				"succeeded", string(encoded), ""); finishErr != nil && !errors.Is(finishErr, governance.ErrOperationTerminal) {
+				logger.Warn("operation_finish_failed", "operation_id", request.OperationID, "error", finishErr.Error())
+			}
+		}
+		return encoded, nil
 	}
 	handlers["document.validate"] = func(ctx context.Context, job *jobs.Job) (json.RawMessage, error) {
 		var request struct {

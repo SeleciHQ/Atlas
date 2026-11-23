@@ -1,16 +1,15 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
 
 	"atlas/internal/identity"
-	"atlas/internal/jobs"
 	"atlas/internal/platform/apperr"
-	"atlas/internal/tenancy"
-	"encoding/json"
 )
 
 func triggerReconciliationHandler(deps Deps) http.HandlerFunc {
@@ -20,28 +19,25 @@ func triggerReconciliationHandler(deps Deps) http.HandlerFunc {
 			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnauthenticated, "authentication_required", "Authentication is required."))
 			return
 		}
-		if deps.Queue == nil || deps.Reconciliation == nil {
+		if deps.Governance == nil {
 			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "reconciliation_unavailable", "Reconciliation is not configured."))
 			return
 		}
 		invoiceID := chi.URLParam(r, "invoiceID")
-		var job *jobs.Job
-		payload, _ := json.Marshal(map[string]string{"organization_id": principal.OrganizationID, "invoice_id": invoiceID})
-		err := tenancy.WithOrganizationTx(r.Context(), deps.Pool, principal.OrganizationID, func(tx pgx.Tx) error {
-			var err error
-			job, _, err = deps.Queue.Enqueue(r.Context(), tx, jobs.NewJob{
-				OrganizationID: principal.OrganizationID,
-				Type:           "reconciliation.run",
-				SchemaVersion:  1,
-				Payload:        payload,
-			})
-			return err
-		})
+		idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		if idempotencyKey == "" {
+			idempotencyKey = uuid.NewString()
+		}
+		payload, _ := json.Marshal(map[string]string{"invoice_id": invoiceID})
+		operationID, created, err := deps.Governance.StartJobOperation(r.Context(), principal.OrganizationID,
+			"reconciliation.run", "reconciliation.run", idempotencyKey, payload)
 		if err != nil {
 			WriteError(w, r, deps.Logger, err)
 			return
 		}
-		WriteJSON(w, http.StatusAccepted, map[string]any{"job_id": job.ID})
+		WriteJSON(w, http.StatusAccepted, map[string]any{
+			"operation_id": operationID, "status": "queued", "created": created,
+		})
 	}
 }
 

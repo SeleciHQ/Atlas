@@ -5,15 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/google/uuid"
 
 	"atlas/internal/agentaccess"
 	"atlas/internal/governance"
 	"atlas/internal/identity"
-	"atlas/internal/jobs"
 	"atlas/internal/query"
-	"atlas/internal/tenancy"
 )
 
 const (
@@ -200,21 +199,22 @@ func newTools(deps Deps) []tool {
 				if args.InvoiceID == "" {
 					return nil, fmt.Errorf("invoice_id is required")
 				}
-				if deps.Queue == nil {
-					return nil, fmt.Errorf("job queue is not configured")
+				idempotencyKey := strings.TrimSpace(args.IdempotencyKey)
+				if idempotencyKey == "" {
+					idempotencyKey = uuid.NewString()
 				}
-				payload, err := json.Marshal(map[string]string{
-					"organization_id": principal.OrganizationID,
-					"invoice_id":      args.InvoiceID,
-				})
+				payload, err := json.Marshal(map[string]string{"invoice_id": args.InvoiceID})
 				if err != nil {
 					return nil, err
 				}
-				job, err := enqueueReconciliation(ctx, deps, principal.OrganizationID, args.IdempotencyKey, payload)
+				operationID, created, err := deps.Governance.StartJobOperation(ctx, principal.OrganizationID,
+					"reconciliation.run", "reconciliation.run", idempotencyKey, payload)
 				if err != nil {
 					return nil, err
 				}
-				return map[string]any{"job_id": job.ID, "status": "queued"}, nil
+				return map[string]any{
+					"operation_id": operationID, "status": "queued", "created": created,
+				}, nil
 			},
 		},
 		{
@@ -371,25 +371,6 @@ func newTools(deps Deps) []tool {
 			},
 		},
 	}
-}
-
-func enqueueReconciliation(ctx context.Context, deps Deps, organizationID, idempotencyKey string, payload []byte) (*jobs.Job, error) {
-	if deps.Queue == nil {
-		return nil, fmt.Errorf("job queue is not configured")
-	}
-	var job *jobs.Job
-	err := tenancy.WithOrganizationTx(ctx, deps.Pool, organizationID, func(tx pgx.Tx) error {
-		var err error
-		job, _, err = deps.Queue.Enqueue(ctx, tx, jobs.NewJob{
-			OrganizationID: organizationID,
-			Type:           "reconciliation.run",
-			SchemaVersion:  1,
-			Payload:        payload,
-			IdempotencyKey: idempotencyKey,
-		})
-		return err
-	})
-	return job, err
 }
 
 func decodeArgs(raw json.RawMessage, target any) error {

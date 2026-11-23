@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -213,6 +214,27 @@ func TestSupplierFollowupREST(t *testing.T) {
 	}
 	if operationType != "supplier.followup" {
 		t.Fatalf("approval operation type = %s", operationType)
+	}
+
+	adminCookie := login(t, router, tenants.OrganizationA, tenants.AdminEmailA)
+	reconcileRequest := httptest.NewRequest(http.MethodPost, "/v1/invoices/"+invoiceID+"/reconcile", nil)
+	reconcileRequest.AddCookie(adminCookie)
+	reconcileRequest.Header.Set("Idempotency-Key", "recon-http-1")
+	reconcileRecorder := httptest.NewRecorder()
+	router.ServeHTTP(reconcileRecorder, reconcileRequest)
+	if reconcileRecorder.Code != http.StatusAccepted {
+		t.Fatalf("reconcile status = %d, body = %s", reconcileRecorder.Code, reconcileRecorder.Body.String())
+	}
+	var reconcileBody struct {
+		OperationID string `json:"operation_id"`
+	}
+	decodeBody(t, reconcileRecorder, &reconcileBody)
+	if reconcileBody.OperationID == "" {
+		t.Fatal("reconcile did not return an operation id")
+	}
+	operation, err := governanceService.GetOperation(ctx, tenants.OrganizationA, reconcileBody.OperationID)
+	if err != nil || operation.Status != "pending" || operation.Type != "reconciliation.run" {
+		t.Fatalf("reconcile operation = %+v %v", operation, err)
 	}
 
 	connection, err := agents.CreateConnection(ctx, tenants.OrganizationA, "followup-agent",

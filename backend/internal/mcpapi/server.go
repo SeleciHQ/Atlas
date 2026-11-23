@@ -12,13 +12,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"atlas/internal/agentaccess"
 	"atlas/internal/authorization"
 	"atlas/internal/governance"
 	"atlas/internal/identity"
-	"atlas/internal/jobs"
 	"atlas/internal/platform/apperr"
 	"atlas/internal/platform/version"
 	"atlas/internal/query"
@@ -38,12 +35,10 @@ var supportedProtocolVersions = map[string]struct{}{
 // Deps are the services required by the MCP endpoint.
 type Deps struct {
 	Logger     *slog.Logger
-	Pool       *pgxpool.Pool
 	Agents     *agentaccess.Service
 	Authorizer authorization.Service
 	Query      *query.Service
 	Governance *governance.Service
-	Queue      *jobs.Queue
 }
 
 type handler struct {

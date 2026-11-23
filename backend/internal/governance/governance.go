@@ -203,10 +203,66 @@ func (s *Service) Decide(ctx context.Context, organizationID, approvalID, decide
 	})
 }
 
-// StartOperation records an idempotent operation and enqueues its execution job
-// in the same transaction. A referenced approval must already be approved.
-// Duplicate idempotency keys return the existing operation without enqueueing.
+// StartOperation records an idempotent governed operation and enqueues its
+// action.execute job in the same transaction. A referenced approval must
+// already be approved. Duplicate keys return the existing operation.
 func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID, operationType, idempotencyKey string, payload []byte) (string, bool, error) {
+	return s.startOperation(ctx, organizationID, approvalID, operationType, idempotencyKey, payload,
+		func(ctx context.Context, tx pgx.Tx, operationID string) error {
+			jobPayload, err := json.Marshal(map[string]string{
+				"organization_id": organizationID,
+				"operation_id":    operationID,
+			})
+			if err != nil {
+				return fmt.Errorf("encode action.execute payload: %w", err)
+			}
+			_, _, err = s.queue.Enqueue(ctx, tx, jobs.NewJob{
+				OrganizationID: organizationID,
+				Type:           ActionExecuteJob,
+				SchemaVersion:  1,
+				Payload:        jobPayload,
+				IdempotencyKey: operationID,
+			})
+			return err
+		})
+}
+
+// StartJobOperation records an idempotent analytical/internal operation and
+// enqueues a caller-specified job carrying the operation id. The job handler is
+// responsible for finishing the operation. No approval is required; callers
+// must only use this for non-external-work actions.
+func (s *Service) StartJobOperation(ctx context.Context, organizationID, operationType, jobType, idempotencyKey string, jobPayload []byte) (string, bool, error) {
+	if jobType == "" {
+		return "", false, fmt.Errorf("job type is required")
+	}
+	return s.startOperation(ctx, organizationID, "", operationType, idempotencyKey, jobPayload,
+		func(ctx context.Context, tx pgx.Tx, operationID string) error {
+			body := map[string]any{}
+			if len(jobPayload) > 0 {
+				if err := json.Unmarshal(jobPayload, &body); err != nil {
+					return fmt.Errorf("decode job payload: %w", err)
+				}
+			}
+			body["organization_id"] = organizationID
+			body["operation_id"] = operationID
+			enriched, err := json.Marshal(body)
+			if err != nil {
+				return fmt.Errorf("encode job payload: %w", err)
+			}
+			_, _, err = s.queue.Enqueue(ctx, tx, jobs.NewJob{
+				OrganizationID: organizationID,
+				Type:           jobType,
+				SchemaVersion:  1,
+				Payload:        enriched,
+				IdempotencyKey: operationID,
+			})
+			return err
+		})
+}
+
+type operationEnqueuer func(context.Context, pgx.Tx, string) error
+
+func (s *Service) startOperation(ctx context.Context, organizationID, approvalID, operationType, idempotencyKey string, payload []byte, enqueue operationEnqueuer) (string, bool, error) {
 	if idempotencyKey == "" {
 		return "", false, fmt.Errorf("idempotency key is required")
 	}
@@ -255,20 +311,7 @@ func (s *Service) StartOperation(ctx context.Context, organizationID, approvalID
 			return err
 		}
 		created = true
-		jobPayload, err := json.Marshal(map[string]string{
-			"organization_id": organizationID,
-			"operation_id":    id,
-		})
-		if err != nil {
-			return fmt.Errorf("encode action.execute payload: %w", err)
-		}
-		if _, _, err := s.queue.Enqueue(ctx, tx, jobs.NewJob{
-			OrganizationID: organizationID,
-			Type:           ActionExecuteJob,
-			SchemaVersion:  1,
-			Payload:        jobPayload,
-			IdempotencyKey: id,
-		}); err != nil {
+		if err := enqueue(ctx, tx, id); err != nil {
 			return fmt.Errorf("enqueue operation: %w", err)
 		}
 		return audit.Record(ctx, tx, audit.Event{

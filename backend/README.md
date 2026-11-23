@@ -219,7 +219,9 @@ server-chosen (`organization/document/version`); clients cannot choose keys.
 Migration `0012_reconciliation` adds versioned `reconciliation_runs`, evidence-backed `reconciliation_matches` and
 `reconciliation_discrepancies` (RLS-scoped). `internal/reconciliation` implements deterministic two-way header
 matching: invoice total vs linked PO totals, currency checks, split invoices across multiple POs, and explicit
-`no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. Line-level matching now supports partial-quantity allocation across PO lines (FIFO, no over-consumption), with `invoice_line_partial` and `delivery_shortfall` findings. No model authority; runs are reproducible.
+`no_linked_po` / `total_mismatch` / `currency_mismatch` discrepancies. Line-level matching now supports partial-quantity allocation across PO lines (FIFO, no over-consumption), with `invoice_line_partial` and `delivery_shortfall` findings. No model authority; runs are reproducible. The REST
+trigger and MCP tool create an idempotent `reconciliation.run` operation (honoring `Idempotency-Key`), enqueue
+the job, and the worker records success/failure on that operation for status polling.
 
 ## Governance and execution (Phase 8, in progress)
 
@@ -299,7 +301,9 @@ negotiates the client's requested version and pins its default.
   missing scope returns JSON-RPC `-32003`, unknown tools `-32602`, unknown methods `-32601`.
 - Tools share `internal/query`, `reconciliation`, `governance` and `jobs` with REST; handlers only validate
   transport input and map results. `request_supplier_followup` evaluates policy and records an agent-attributed
-  approval. `reconcile_invoice` enqueues `reconciliation.run` and returns a job id.
+  approval. `reconcile_invoice` creates an idempotent `reconciliation.run` operation, enqueues the job and
+  returns the operation id; the worker records the run result on that operation, so `get_operation_status`
+  works for reconciliation.
 - Resources are template-based: `atlas://organizations/{org}/invoices/{invoiceId}` and
   `atlas://organizations/{org}/reconciliations/{runId}`. Reads enforce the principal's organization and the
   corresponding scope; `resources/list` returns no materialized resources.
