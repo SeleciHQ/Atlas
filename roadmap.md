@@ -1171,8 +1171,9 @@ reconciliation views with organization/scope enforcement, tool schemas are snaps
 `internal/mcpapi/testdata/tools.json`, and REST parity includes
 `POST /v1/invoices/{id}/supplier-followups`. Reconciliation triggers now create idempotent
 `reconciliation.run` operations (REST `Idempotency-Key`, MCP tool key), and the worker completes them, so
-`get_operation_status` works for reconciliation as well as governed actions. Next: session/SSE transport
-support, progress notifications, live client validation and the ADR-009 client matrix.
+`get_operation_status` works for reconciliation as well as governed actions. The MCP endpoint also supports
+optional in-process sessions (`MCP-Session-Id`, DELETE termination, principal binding) and SSE framing when
+requested. Next: server-initiated progress notifications, live client validation and the ADR-009 client matrix.
 
 ---
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,11 @@ type mcpResponse struct {
 
 func mcpPost(t *testing.T, handler http.Handler, token, version string, payload any) *httptest.ResponseRecorder {
 	t.Helper()
+	return mcpPostHeaders(t, handler, token, version, "", "", payload)
+}
+
+func mcpPostHeaders(t *testing.T, handler http.Handler, token, version, sessionID, accept string, payload any) *httptest.ResponseRecorder {
+	t.Helper()
 	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("encode MCP request: %v", err)
@@ -42,6 +48,12 @@ func mcpPost(t *testing.T, handler http.Handler, token, version string, payload 
 	}
 	if version != "" {
 		request.Header.Set("MCP-Protocol-Version", version)
+	}
+	if sessionID != "" {
+		request.Header.Set("MCP-Session-Id", sessionID)
+	}
+	if accept != "" {
+		request.Header.Set("Accept", accept)
 	}
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -139,6 +151,33 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 	}
 	if initResult.ProtocolVersion != "2025-03-26" || initResult.ServerInfo.Name != "atlas-mcp" {
 		t.Fatalf("initialize result = %+v", initResult)
+	}
+	sessionID := initialize.Header().Get("MCP-Session-Id")
+	if sessionID == "" {
+		t.Fatal("initialize did not create an MCP session")
+	}
+	sessionTools := mcpPostHeaders(t, handler, issued.Token, "", sessionID, "", map[string]any{
+		"jsonrpc": "2.0", "id": 30, "method": "tools/list",
+	})
+	if sessionTools.Code != http.StatusOK {
+		t.Fatalf("session tools status = %d, body = %s", sessionTools.Code, sessionTools.Body.String())
+	}
+	sseTools := mcpPostHeaders(t, handler, issued.Token, "", sessionID, "text/event-stream", map[string]any{
+		"jsonrpc": "2.0", "id": 31, "method": "tools/list",
+	})
+	if sseTools.Code != http.StatusOK || !strings.Contains(sseTools.Header().Get("Content-Type"), "text/event-stream") ||
+		!strings.Contains(sseTools.Body.String(), "event: message") {
+		t.Fatalf("SSE tools = %d %q %s", sseTools.Code, sseTools.Header().Get("Content-Type"), sseTools.Body.String())
+	}
+	if bogus := mcpPostHeaders(t, handler, issued.Token, "", "bogus-session", "", map[string]any{
+		"jsonrpc": "2.0", "id": 32, "method": "tools/list",
+	}); bogus.Code != http.StatusNotFound {
+		t.Fatalf("bogus session status = %d, want 404", bogus.Code)
+	}
+	if crossPrincipal := mcpPostHeaders(t, handler, limitedToken.Token, "", sessionID, "", map[string]any{
+		"jsonrpc": "2.0", "id": 33, "method": "tools/list",
+	}); crossPrincipal.Code != http.StatusForbidden {
+		t.Fatalf("cross-principal session status = %d, want 403", crossPrincipal.Code)
 	}
 
 	notification := mcpPost(t, handler, issued.Token, "", map[string]any{
@@ -326,5 +365,19 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 	}
 	if actorKind != "agent" || actorID != connection.ID {
 		t.Fatalf("approval audit = %s/%s", actorKind, actorID)
+	}
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	deleteRequest.Header.Set("Authorization", "Bearer "+issued.Token)
+	deleteRequest.Header.Set("MCP-Session-Id", sessionID)
+	deleteRecorder := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRecorder, deleteRequest)
+	if deleteRecorder.Code != http.StatusNoContent {
+		t.Fatalf("session delete status = %d, body = %s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+	if afterDelete := mcpPostHeaders(t, handler, issued.Token, "", sessionID, "", map[string]any{
+		"jsonrpc": "2.0", "id": 34, "method": "tools/list",
+	}); afterDelete.Code != http.StatusNotFound {
+		t.Fatalf("terminated session status = %d, want 404", afterDelete.Code)
 	}
 }

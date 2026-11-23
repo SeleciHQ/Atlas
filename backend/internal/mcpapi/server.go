@@ -42,9 +42,10 @@ type Deps struct {
 }
 
 type handler struct {
-	deps   Deps
-	tools  []tool
-	byName map[string]tool
+	deps     Deps
+	tools    []tool
+	byName   map[string]tool
+	sessions *sessionStore
 }
 
 // NewHandler builds the MCP HTTP handler.
@@ -57,7 +58,7 @@ func NewHandler(deps Deps) http.Handler {
 	for _, t := range tools {
 		byName[t.name] = t
 	}
-	return &handler{deps: deps, tools: tools, byName: byName}
+	return &handler{deps: deps, tools: tools, byName: byName, sessions: newSessionStore()}
 }
 
 type rpcRequest struct {
@@ -92,8 +93,12 @@ type toolResult struct {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete {
+		h.terminateSession(w, r)
+		return
+	}
 	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
+		w.Header().Set("Allow", http.MethodPost+", "+http.MethodDelete)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -107,6 +112,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	principal, ok := h.authenticate(w, r)
 	if !ok {
 		return
+	}
+	if sessionID := strings.TrimSpace(r.Header.Get(sessionIDHeader)); sessionID != "" {
+		known, valid := h.sessions.validate(sessionID, principal)
+		if !known {
+			writeProblem(w, apperr.New(apperr.KindNotFound, "session_not_found", "MCP session not found."))
+			return
+		}
+		if !valid {
+			writeProblem(w, apperr.New(apperr.KindForbidden, "session_principal_mismatch", "MCP session belongs to another principal."))
+			return
+		}
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
@@ -141,9 +157,57 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusOK, request.ID, rpcErr.Code, rpcErr.Message, rpcErr.Data)
 		return
 	}
+	if request.Method == "initialize" {
+		w.Header().Set(sessionIDHeader, h.sessions.create(principal))
+	}
+	response := rpcResponse{JSONRPC: "2.0", ID: request.ID, Result: result}
+	if wantsEventStream(r) {
+		encoded, err := json.Marshal(response)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, request.ID, -32603, "encode response", nil)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("event: message\ndata: "))
+		_, _ = w.Write(encoded)
+		_, _ = w.Write([]byte("\n\n"))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(rpcResponse{JSONRPC: "2.0", ID: request.ID, Result: result})
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (h *handler) terminateSession(w http.ResponseWriter, r *http.Request) {
+	principal, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	sessionID := strings.TrimSpace(r.Header.Get(sessionIDHeader))
+	if sessionID == "" {
+		writeProblem(w, apperr.New(apperr.KindInvalid, "session_required", "MCP-Session-Id is required."))
+		return
+	}
+	known, valid := h.sessions.validate(sessionID, principal)
+	if !known {
+		writeProblem(w, apperr.New(apperr.KindNotFound, "session_not_found", "MCP session not found."))
+		return
+	}
+	if !valid {
+		writeProblem(w, apperr.New(apperr.KindForbidden, "session_principal_mismatch", "MCP session belongs to another principal."))
+		return
+	}
+	h.sessions.delete(sessionID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func wantsEventStream(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream")
 }
 
 func (h *handler) authenticate(w http.ResponseWriter, r *http.Request) (identity.Principal, bool) {
