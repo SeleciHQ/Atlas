@@ -28,6 +28,43 @@ type policyRequest struct {
 	Config map[string]any `json:"config"`
 }
 
+type supplierFollowupRequest struct {
+	AmountMinor int64  `json:"amount_minor"`
+	Note        string `json:"note"`
+}
+
+// requestSupplierFollowupHandler creates the governed approval for a supplier
+// follow-up on an invoice. Execution remains Atlas-controlled.
+func requestSupplierFollowupHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := identity.PrincipalFrom(r.Context())
+		if !ok || deps.Governance == nil {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "governance_unavailable", "Governance is not configured."))
+			return
+		}
+		var request supplierFollowupRequest
+		if r.ContentLength > 0 {
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request); err != nil {
+				WriteError(w, r, deps.Logger, apperr.New(apperr.KindInvalid, "invalid_request", "Invalid follow-up request."))
+				return
+			}
+		}
+		if request.AmountMinor < 0 {
+			WriteError(w, r, deps.Logger, apperr.New(apperr.KindInvalid, "invalid_request", "amount_minor must be non-negative."))
+			return
+		}
+		followUp, err := deps.Governance.RequestSupplierFollowup(r.Context(), principal.OrganizationID,
+			chi.URLParam(r, "invoiceID"), request.AmountMinor, governance.Actor{
+				Kind: string(principal.Kind), ID: principal.ID, Display: principal.DisplayName,
+			})
+		if err != nil {
+			WriteError(w, r, deps.Logger, err)
+			return
+		}
+		WriteJSON(w, http.StatusCreated, followUp)
+	}
+}
+
 func requestApprovalHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := identity.PrincipalFrom(r.Context())

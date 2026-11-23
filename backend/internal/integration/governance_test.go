@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"atlas/internal/agentaccess"
 	"atlas/internal/authorization"
 	"atlas/internal/governance"
 	"atlas/internal/httpapi"
@@ -154,6 +155,102 @@ func TestApprovalExpirySweep(t *testing.T) {
 	}
 	if again, err := service.ExpireApprovals(ctx); err != nil || again != 0 {
 		t.Fatalf("second sweep = %d, %v", again, err)
+	}
+}
+
+func TestSupplierFollowupREST(t *testing.T) {
+	admin, app, auth := setupTenantSchema(t)
+	tenants := seedTenants(t, admin)
+	ctx := context.Background()
+	governanceService := governance.NewService(app, jobs.NewQueue(app))
+	if _, err := governanceService.SetPolicy(ctx, tenants.OrganizationA, "default",
+		[]byte(`{"allow_actions":["supplier.followup"]}`)); err != nil {
+		t.Fatalf("set policy: %v", err)
+	}
+	agents := agentaccess.NewService(app)
+	sessions := identity.NewSessionService(auth, time.Hour)
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger:         testLogger(),
+		Pool:           app,
+		Migrations:     migrationsFS(t),
+		ServiceName:    "atlas-api",
+		Version:        "test",
+		Identity:       sessions,
+		DevSessions:    sessions,
+		Authorizer:     authorization.NewService(),
+		Orgs:           orgs.NewService(app),
+		Agents:         agents,
+		Governance:     governanceService,
+		DevAuthEnabled: true,
+	})
+	invoiceID := "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+
+	memberCookie := login(t, router, tenants.OrganizationA, tenants.MemberEmailA)
+	followup := request(t, router, http.MethodPost,
+		"/v1/invoices/"+invoiceID+"/supplier-followups", memberCookie, map[string]any{"amount_minor": 900})
+	if followup.Code != http.StatusCreated {
+		t.Fatalf("member follow-up status = %d, body = %s", followup.Code, followup.Body.String())
+	}
+	var followupBody governance.FollowUp
+	decodeBody(t, followup, &followupBody)
+	if followupBody.ApprovalID == "" || followupBody.Status != "pending" || followupBody.PolicyReason == "" {
+		t.Fatalf("follow-up = %+v", followupBody)
+	}
+	var actorKind, actorID, operationType string
+	if err := admin.QueryRow(ctx, `
+		SELECT actor_kind, actor_id FROM audit_events
+		WHERE organization_id = $1 AND action = 'approval.requested' AND resource_id = $2
+		ORDER BY created_at DESC LIMIT 1`, tenants.OrganizationA, invoiceID).Scan(&actorKind, &actorID); err != nil {
+		t.Fatalf("read member audit: %v", err)
+	}
+	if actorKind != "human" || actorID != tenants.MemberUserA {
+		t.Fatalf("member audit = %s/%s", actorKind, actorID)
+	}
+	if err := admin.QueryRow(ctx, `
+		SELECT operation_type FROM approvals WHERE organization_id = $1 AND id = $2`,
+		tenants.OrganizationA, followupBody.ApprovalID).Scan(&operationType); err != nil {
+		t.Fatalf("read approval: %v", err)
+	}
+	if operationType != "supplier.followup" {
+		t.Fatalf("approval operation type = %s", operationType)
+	}
+
+	connection, err := agents.CreateConnection(ctx, tenants.OrganizationA, "followup-agent",
+		[]string{agentaccess.ScopeActionsRequest}, tenants.AdminUserA)
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	issued, err := agents.IssueToken(ctx, tenants.OrganizationA, connection.ID, tenants.AdminUserA, time.Hour)
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+	agentFollowup := bearerRequest(t, router, http.MethodPost,
+		"/v1/invoices/"+invoiceID+"/supplier-followups", issued.Token)
+	if agentFollowup.Code != http.StatusCreated {
+		t.Fatalf("agent follow-up status = %d, body = %s", agentFollowup.Code, agentFollowup.Body.String())
+	}
+	if err := admin.QueryRow(ctx, `
+		SELECT actor_kind, actor_id FROM audit_events
+		WHERE organization_id = $1 AND action = 'approval.requested' AND resource_id = $2
+		ORDER BY created_at DESC LIMIT 1`, tenants.OrganizationA, invoiceID).Scan(&actorKind, &actorID); err != nil {
+		t.Fatalf("read agent audit: %v", err)
+	}
+	if actorKind != "agent" || actorID != connection.ID {
+		t.Fatalf("agent audit = %s/%s", actorKind, actorID)
+	}
+
+	limited, err := agents.CreateConnection(ctx, tenants.OrganizationA, "limited-followup",
+		[]string{agentaccess.ScopeSuppliersRead}, tenants.AdminUserA)
+	if err != nil {
+		t.Fatalf("create limited agent: %v", err)
+	}
+	limitedToken, err := agents.IssueToken(ctx, tenants.OrganizationA, limited.ID, tenants.AdminUserA, time.Hour)
+	if err != nil {
+		t.Fatalf("issue limited token: %v", err)
+	}
+	if response := bearerRequest(t, router, http.MethodPost,
+		"/v1/invoices/"+invoiceID+"/supplier-followups", limitedToken.Token); response.Code != http.StatusForbidden {
+		t.Fatalf("limited agent follow-up status = %d, want 403", response.Code)
 	}
 }
 

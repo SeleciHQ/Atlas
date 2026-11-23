@@ -122,6 +122,8 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/invoices", searchInvoicesHandler(deps))
 			r.With(requireScope(deps, "invoices:read")).
 				Get("/invoices/{invoiceID}", getInvoiceHandler(deps))
+			r.With(requireScope(deps, "actions:request")).
+				Post("/invoices/{invoiceID}/supplier-followups", requestSupplierFollowupHandler(deps))
 			r.With(requireScope(deps, "purchase_orders:read")).
 				Get("/purchase-orders", searchPurchaseOrdersHandler(deps))
 			r.With(requireScope(deps, "purchase_orders:read")).

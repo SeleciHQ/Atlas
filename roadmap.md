@@ -1166,8 +1166,11 @@ read layer now backs invoice/PO search, supplier search, deliveries, discrepanci
 scope-protected REST endpoints; existing reconciliation/operation/approval-read endpoints use the same scope
 middleware. `cmd/atlas-mcp` now serves `POST /mcp` over Streamable HTTP with bearer-token auth, the eleven
 tools (scope-checked; agent-attributed approvals) and JSON-RPC error mapping, sharing the same query,
-reconciliation, governance and job services as REST. Next: MCP resources, contract/snapshot tests, transport
-compatibility details and the ADR-009 client matrix.
+reconciliation, governance and job services as REST. Template-based MCP resources expose invoice and
+reconciliation views with organization/scope enforcement, tool schemas are snapshotted in
+`internal/mcpapi/testdata/tools.json`, and REST parity includes
+`POST /v1/invoices/{id}/supplier-followups`. Next: session/SSE transport support, progress notifications,
+live client validation and the ADR-009 client matrix.
 
 ---
 

@@ -291,7 +291,8 @@ return 405 for now). It requires an Atlas agent bearer token and returns `401` w
 authentication fails. Supported protocol versions are `2024-11-05`, `2025-03-26` and `2025-06-18`; the server
 negotiates the client's requested version and pins its default.
 
-- Methods: `initialize`, `ping`, `notifications/initialized`, `tools/list`, `tools/call`.
+- Methods: `initialize`, `ping`, `notifications/initialized`, `tools/list`, `tools/call`,
+  `resources/list`, `resources/templates/list`, `resources/read`.
 - Eleven tools: `search_invoices`, `get_invoice`, `search_purchase_orders`, `get_delivery_records`,
   `get_supplier`, `reconcile_invoice`, `get_reconciliation`, `search_discrepancies`,
   `request_supplier_followup`, `request_approval`, `get_operation_status`. Each tool declares its scope;
@@ -299,10 +300,15 @@ negotiates the client's requested version and pins its default.
 - Tools share `internal/query`, `reconciliation`, `governance` and `jobs` with REST; handlers only validate
   transport input and map results. `request_supplier_followup` evaluates policy and records an agent-attributed
   approval. `reconcile_invoice` enqueues `reconciliation.run` and returns a job id.
+- Resources are template-based: `atlas://organizations/{org}/invoices/{invoiceId}` and
+  `atlas://organizations/{org}/reconciliations/{runId}`. Reads enforce the principal's organization and the
+  corresponding scope; `resources/list` returns no materialized resources.
+- REST parity for follow-ups: `POST /v1/invoices/{invoiceID}/supplier-followups` (scope `actions:request`).
+- `internal/mcpapi/testdata/tools.json` snapshots the eleven tool schemas; regenerate with
+  `go test ./internal/mcpapi -run TestToolSchemasSnapshot -update`.
 - Config: `DATABASE_URL`, `MCP_PORT` (falls back to `PORT`, default `8081`), `LOG_LEVEL`, `ATLAS_ENV`. The
   command refuses `ATLAS_ENV=production` until ADR-002/ADR-004 production token issuance exists.
-- Not yet implemented: MCP resources, sessions/SSE streams, progress notifications and the ADR-009 client
-  matrix.
+- Not yet implemented: sessions/SSE streams, progress notifications and the ADR-009 client matrix.
 
 ## Canonical model and ontology (Phase 6, complete)
 

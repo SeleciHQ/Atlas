@@ -184,7 +184,8 @@ func (h *handler) dispatch(r *http.Request, principal identity.Principal, reques
 		return map[string]any{
 			"protocolVersion": negotiated,
 			"capabilities": map[string]any{
-				"tools": map[string]any{"listChanged": false},
+				"tools":     map[string]any{"listChanged": false},
+				"resources": map[string]any{"listChanged": false, "subscribe": false},
 			},
 			"serverInfo": map[string]any{"name": "atlas-mcp", "version": version.Version},
 		}, nil
@@ -202,6 +203,18 @@ func (h *handler) dispatch(r *http.Request, principal identity.Principal, reques
 			})
 		}
 		return map[string]any{"tools": list}, nil
+	case "resources/list":
+		return map[string]any{"resources": []any{}}, nil
+	case "resources/templates/list":
+		return resourceTemplates(), nil
+	case "resources/read":
+		var params struct {
+			URI string `json:"uri"`
+		}
+		if err := json.Unmarshal(request.Params, &params); err != nil || params.URI == "" {
+			return nil, &rpcError{Code: -32602, Message: "invalid params"}
+		}
+		return h.readResource(r.Context(), principal, params.URI)
 	case "tools/call":
 		var params struct {
 			Name      string          `json:"name"`

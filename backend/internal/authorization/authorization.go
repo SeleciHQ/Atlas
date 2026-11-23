@@ -27,6 +27,7 @@ const (
 	PermissionSuppliersRead      Permission = "suppliers:read"
 	PermissionDiscrepanciesRead  Permission = "discrepancies:read"
 	PermissionOperationsRead     Permission = "operations:read"
+	PermissionActionsRequest     Permission = "actions:request"
 	PermissionApprovalsRequest   Permission = "approvals:request"
 	PermissionApprovalsDecide    Permission = "approvals:decide"
 	// Approval permissions may be granted explicitly to eligible members once
@@ -55,6 +56,7 @@ var rolePermissions = map[string]map[Permission]struct{}{
 		PermissionSuppliersRead:      {},
 		PermissionDiscrepanciesRead:  {},
 		PermissionOperationsRead:     {},
+		PermissionActionsRequest:     {},
 		PermissionApprovalsRequest:   {},
 		PermissionReconciliationRun:  {},
 	},
@@ -71,6 +73,7 @@ var rolePermissions = map[string]map[Permission]struct{}{
 		PermissionSuppliersRead:      {},
 		PermissionDiscrepanciesRead:  {},
 		PermissionOperationsRead:     {},
+		PermissionActionsRequest:     {},
 		PermissionApprovalsRequest:   {},
 	},
 }
@@ -116,6 +119,7 @@ var scopePermissions = map[string]Permission{
 	"discrepancies:read":   PermissionDiscrepanciesRead,
 	"reconciliation:read":  PermissionReconciliationRead,
 	"reconciliation:run":   PermissionReconciliationRun,
+	"actions:request":      PermissionActionsRequest,
 	"approvals:request":    PermissionApprovalsRequest,
 	"operations:read":      PermissionOperationsRead,
 }

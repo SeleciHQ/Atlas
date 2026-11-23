@@ -191,6 +191,60 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 		t.Fatalf("search result = %s", searchBody.Result)
 	}
 
+	templates := mcpPost(t, handler, issued.Token, "", map[string]any{
+		"jsonrpc": "2.0", "id": 20, "method": "resources/templates/list",
+	})
+	var templatesBody mcpResponse
+	decodeBody(t, templates, &templatesBody)
+	var templatesResult struct {
+		ResourceTemplates []struct {
+			URITemplate string `json:"uriTemplate"`
+		} `json:"resourceTemplates"`
+	}
+	if err := json.Unmarshal(templatesBody.Result, &templatesResult); err != nil || len(templatesResult.ResourceTemplates) != 2 {
+		t.Fatalf("resource templates = %s %v", templatesBody.Result, err)
+	}
+
+	resourceURI := "atlas://organizations/" + tenants.OrganizationA + "/invoices/" + invoice.ID
+	resource := mcpPost(t, handler, issued.Token, "", map[string]any{
+		"jsonrpc": "2.0", "id": 21, "method": "resources/read",
+		"params": map[string]any{"uri": resourceURI},
+	})
+	var resourceBody mcpResponse
+	decodeBody(t, resource, &resourceBody)
+	if resourceBody.Error != nil {
+		t.Fatalf("resource read = %s", resource.Body.String())
+	}
+	var resourceResult struct {
+		Contents []struct {
+			Text string `json:"text"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(resourceBody.Result, &resourceResult); err != nil || len(resourceResult.Contents) != 1 {
+		t.Fatalf("resource result = %s %v", resourceBody.Result, err)
+	}
+	var resourcePayload struct {
+		Invoice struct {
+			Invoice struct {
+				ID string `json:"id"`
+			} `json:"invoice"`
+		} `json:"invoice"`
+	}
+	if err := json.Unmarshal([]byte(resourceResult.Contents[0].Text), &resourcePayload); err != nil ||
+		resourcePayload.Invoice.Invoice.ID != invoice.ID {
+		t.Fatalf("resource payload = %s %v", resourceResult.Contents[0].Text, err)
+	}
+
+	crossOrg := mcpPost(t, handler, issued.Token, "", map[string]any{
+		"jsonrpc": "2.0", "id": 22, "method": "resources/read",
+		"params": map[string]any{"uri": "atlas://organizations/00000000-0000-0000-0000-000000000000/invoices/" + invoice.ID},
+	})
+	var crossOrgBody mcpResponse
+	decodeBody(t, crossOrg, &crossOrgBody)
+	if crossOrgBody.Error == nil || crossOrgBody.Error.Code != -32003 {
+		t.Fatalf("cross-org resource = %s", crossOrg.Body.String())
+	}
+
 	denied := mcpPost(t, handler, limitedToken.Token, "2025-03-26", map[string]any{
 		"jsonrpc": "2.0", "id": 4, "method": "tools/call",
 		"params": map[string]any{"name": "search_invoices", "arguments": map[string]any{}},

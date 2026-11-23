@@ -1,0 +1,292 @@
+[
+  {
+    "name": "search_invoices",
+    "description": "Find invoices by supplier, number, currency, amount range or limit.",
+    "scope": "invoices:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "description": "ISO-4217 currency",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum rows to return (1-100, default 25)",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_total_minor": {
+          "description": "Maximum total in minor units",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_total_minor": {
+          "description": "Minimum total in minor units",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "number": {
+          "description": "Invoice number (partial match)",
+          "type": "string"
+        },
+        "supplier_id": {
+          "description": "Supplier UUID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_invoice",
+    "description": "Retrieve one invoice with lines and linked purchase order ids.",
+    "scope": "invoices:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invoice_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "search_purchase_orders",
+    "description": "Find purchase orders by supplier, number, currency, amount range or limit.",
+    "scope": "purchase_orders:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "currency": {
+          "description": "ISO-4217 currency",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum rows to return (1-100, default 25)",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_total_minor": {
+          "description": "Maximum total in minor units",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_total_minor": {
+          "description": "Minimum total in minor units",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "number": {
+          "description": "Purchase order number (partial match)",
+          "type": "string"
+        },
+        "supplier_id": {
+          "description": "Supplier UUID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_delivery_records",
+    "description": "List delivery records for an invoice or purchase order.",
+    "scope": "deliveries:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum rows to return (1-100, default 25)",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "purchase_order_id": {
+          "description": "Purchase order UUID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_supplier",
+    "description": "Retrieve a supplier profile with invoice and order counts.",
+    "scope": "suppliers:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "supplier_id": {
+          "description": "Supplier UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "supplier_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "reconcile_invoice",
+    "description": "Queue a deterministic reconciliation run for an invoice and return a job id.",
+    "scope": "reconciliation:run",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "idempotency_key": {
+          "description": "Optional client idempotency key",
+          "type": "string"
+        },
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invoice_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_reconciliation",
+    "description": "Retrieve a reconciliation run by id, or list runs for an invoice.",
+    "scope": "reconciliation:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        },
+        "run_id": {
+          "description": "Reconciliation run UUID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "search_discrepancies",
+    "description": "Find reconciliation discrepancies by kind, severity, invoice, run or supplier.",
+    "scope": "discrepancies:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Discrepancy kind",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Maximum rows to return (1-100, default 25)",
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "run_id": {
+          "description": "Reconciliation run UUID",
+          "type": "string"
+        },
+        "severity": {
+          "description": "info, warning or error",
+          "type": "string"
+        },
+        "supplier_id": {
+          "description": "Supplier UUID",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "request_supplier_followup",
+    "description": "Request a governed supplier follow-up for an invoice. Returns an approval id.",
+    "scope": "actions:request",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "amount_minor": {
+          "description": "Optional amount for policy thresholds",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "invoice_id": {
+          "description": "Invoice UUID",
+          "type": "string"
+        },
+        "note": {
+          "description": "Optional note for the reviewer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invoice_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "request_approval",
+    "description": "Request human approval for a specific proposed action.",
+    "scope": "approvals:request",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "object_id": {
+          "description": "Resource id",
+          "type": "string"
+        },
+        "object_type": {
+          "description": "Resource type, for example invoice",
+          "type": "string"
+        },
+        "operation_type": {
+          "description": "Action/operation type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_type",
+        "object_type",
+        "object_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "name": "get_operation_status",
+    "description": "Poll the status, attempts and result of a governed operation.",
+    "scope": "operations:read",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "description": "Operation UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation_id"
+      ],
+      "type": "object"
+    }
+  }
+]

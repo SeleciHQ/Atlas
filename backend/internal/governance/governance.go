@@ -15,6 +15,7 @@ import (
 
 	"atlas/internal/audit"
 	"atlas/internal/jobs"
+	"atlas/internal/platform/apperr"
 )
 
 // ActionExecuteJob is the job type that runs approved operations.
@@ -147,6 +148,33 @@ func (s *Service) RequestApprovalAs(ctx context.Context, organizationID, operati
 		})
 	})
 	return id, err
+}
+
+// FollowUp is the result of requesting a governed supplier follow-up.
+type FollowUp struct {
+	ApprovalID   string `json:"approval_id"`
+	Status       string `json:"status"`
+	PolicyReason string `json:"policy_reason"`
+}
+
+// RequestSupplierFollowup evaluates policy and creates an approval for a
+// supplier follow-up on an invoice. Execution stays Atlas-controlled.
+func (s *Service) RequestSupplierFollowup(ctx context.Context, organizationID, invoiceID string, amountMinor int64, actor Actor) (*FollowUp, error) {
+	if invoiceID == "" {
+		return nil, apperr.New(apperr.KindInvalid, "invalid_request", "invoice_id is required.")
+	}
+	decision, err := s.Evaluate(ctx, organizationID, "supplier.followup", amountMinor)
+	if err != nil {
+		return nil, err
+	}
+	if !decision.Allowed {
+		return nil, apperr.New(apperr.KindForbidden, "policy_denied", "Policy denied supplier follow-up: "+decision.Reason)
+	}
+	approvalID, err := s.RequestApprovalAs(ctx, organizationID, "supplier.followup", "invoice", invoiceID, actor)
+	if err != nil {
+		return nil, err
+	}
+	return &FollowUp{ApprovalID: approvalID, Status: "pending", PolicyReason: decision.Reason}, nil
 }
 
 // Decide approves or rejects a pending approval. Only pending approvals move.

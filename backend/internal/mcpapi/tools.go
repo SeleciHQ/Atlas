@@ -306,20 +306,14 @@ func newTools(deps Deps) []tool {
 				if args.InvoiceID == "" {
 					return nil, fmt.Errorf("invoice_id is required")
 				}
-				decision, err := deps.Governance.Evaluate(ctx, principal.OrganizationID, "supplier.followup", args.AmountMinor)
+				followUp, err := deps.Governance.RequestSupplierFollowup(ctx, principal.OrganizationID, args.InvoiceID,
+					args.AmountMinor, governance.Actor{
+						Kind: string(principal.Kind), ID: principal.ID, Display: principal.DisplayName,
+					})
 				if err != nil {
 					return nil, err
 				}
-				if !decision.Allowed {
-					return nil, fmt.Errorf("policy denied supplier follow-up: %s", decision.Reason)
-				}
-				approvalID, err := deps.Governance.RequestApprovalAs(ctx, principal.OrganizationID,
-					"supplier.followup", "invoice", args.InvoiceID,
-					governance.Actor{Kind: string(identity.KindAgent), ID: principal.ID, Display: principal.DisplayName})
-				if err != nil {
-					return nil, err
-				}
-				return map[string]any{"approval_id": approvalID, "status": "pending", "policy_reason": decision.Reason}, nil
+				return followUp, nil
 			},
 		},
 		{
