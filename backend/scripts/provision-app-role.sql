@@ -109,7 +109,7 @@ END $$;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO atlas_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO atlas_worker;
 REVOKE ALL ON TABLE users, sessions, oidc_identities FROM atlas_app;
-REVOKE ALL ON TABLE users, sessions, oidc_identities FROM atlas_worker;
+REVOKE ALL ON TABLE users, sessions, oidc_identities, agent_tokens FROM atlas_worker;
 REVOKE UPDATE, DELETE ON audit_events FROM atlas_app;
 REVOKE UPDATE, DELETE ON audit_events FROM atlas_worker;
 
@@ -136,3 +136,4 @@ GRANT EXECUTE ON FUNCTION atlas_claim_job(text, integer) TO atlas_worker;
 GRANT EXECUTE ON FUNCTION atlas_reap_expired_leases() TO atlas_worker;
 GRANT EXECUTE ON FUNCTION atlas_claim_outbox(integer) TO atlas_worker;
 GRANT EXECUTE ON FUNCTION atlas_expire_approvals() TO atlas_worker;
+GRANT EXECUTE ON FUNCTION atlas_resolve_agent_token(text) TO atlas_app;

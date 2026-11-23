@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"atlas/internal/agentaccess"
 	"atlas/internal/authorization"
 	"atlas/internal/connectors"
 	"atlas/internal/documents"
@@ -168,6 +169,7 @@ func run() error {
 		Queue:          queue,
 		Reconciliation: reconciliation.NewService(pool),
 		Governance:     governance.NewService(pool, queue),
+		Agents:         agentaccess.NewService(pool),
 		StorageHandler: storageHandler,
 		Authorizer:     authorization.NewService(),
 		Orgs:           orgs.NewService(pool),

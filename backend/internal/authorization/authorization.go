@@ -86,3 +86,37 @@ func (Service) Authorize(principal identity.Principal, permission Permission) er
 func (s Service) Allowed(principal identity.Principal, permission Permission) bool {
 	return s.Authorize(principal, permission) == nil
 }
+
+// scopePermissions maps agent scopes to the equivalent human permission where
+// one exists. A human calling an agent-capable REST endpoint is evaluated by
+// role; scopes without a human equivalent are agent-only.
+var scopePermissions = map[string]Permission{
+	"reconciliation:read": PermissionReconciliationRead,
+	"reconciliation:run":  PermissionReconciliationRun,
+	"approvals:request":   PermissionApprovalsRequest,
+	"operations:read":     PermissionOrganizationRead,
+}
+
+// AuthorizeScope returns nil when an agent connection holds scope, or when a
+// human principal's role implies the equivalent permission. Unknown scopes and
+// non-agent/non-human principals are denied.
+func (s Service) AuthorizeScope(principal identity.Principal, scope string) error {
+	switch principal.Kind {
+	case identity.KindAgent:
+		for _, held := range principal.Scopes {
+			if held == scope {
+				return nil
+			}
+		}
+	case identity.KindHuman:
+		if permission, ok := scopePermissions[scope]; ok {
+			return s.Authorize(principal, permission)
+		}
+	}
+	return apperr.New(apperr.KindForbidden, "permission_denied", "This principal may not perform that action.")
+}
+
+// AllowedScope is the boolean form of AuthorizeScope.
+func (s Service) AllowedScope(principal identity.Principal, scope string) bool {
+	return s.AuthorizeScope(principal, scope) == nil
+}

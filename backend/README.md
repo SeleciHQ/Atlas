@@ -246,6 +246,29 @@ partial expiry index. `internal/governance` evaluates the latest active policy d
   `approval.expired`. `cmd/atlas-scheduler` runs the expiry sweep every `APPROVAL_EXPIRY_MS` (default 60000).
   Remaining Phase 8 work: UI surfacing.
 
+## Agent access (Phase 9, in progress)
+
+Migration `0016_agent_tokens` adds `agent_tokens` (RLS-scoped) and the
+`atlas_resolve_agent_token(text)` security-definer function used for pre-tenant bearer-token resolution.
+`internal/agentaccess` implements the agent connection lifecycle.
+
+- `GET /v1/agents`, `POST /v1/agents`, `POST /v1/agents/{id}/revoke`,
+  `GET/POST /v1/agents/{id}/tokens`, `POST /v1/agents/{id}/tokens/{tokenID}/revoke` require
+  `agents:manage` (admin). `GET /v1/agents/me` reports the resolved principal and scopes to any
+  authenticated principal.
+- Agent scopes are explicit and wildcard-free: `invoices:read`, `purchase_orders:read`,
+  `deliveries:read`, `suppliers:read`, `reconciliation:read`, `reconciliation:run`,
+  `discrepancies:read`, `actions:request`, `approvals:request`, `operations:read`.
+  `authorization.AuthorizeScope` enforces exact agent scopes; humans map through their role where a
+  scope has an equivalent permission.
+- Protected routes accept `Authorization: Bearer <token>` (agents) or the existing human session cookie.
+  Only token hashes are stored; resolution enforces connection, organization, expiry and revocation state.
+  Connection and token create/revoke actions are audited.
+- Token issuance here is the development/v0 issuer permitted by the roadmap. Production OAuth issuance and
+  MCP authorization metadata remain open under ADR-002/ADR-004/ADR-009.
+- Re-run `scripts/provision-app-role.sql`: it grants `atlas_app` EXECUTE on `atlas_resolve_agent_token`
+  and revokes `agent_tokens` from `atlas_worker`.
+
 ## Canonical model and ontology (Phase 6, complete)
 
 Migration `0009_canonical` adds the v0 canonical schema (`suppliers`, `purchase_orders`, `po_lines`, `invoices`,
@@ -306,7 +329,7 @@ Migration `0005_jobs_outbox` adds `jobs`, `job_attempts`, `job_results` and `out
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
 `integration_credentials`, `sync_runs`, `sync_cursors`, `source_records`, `normalized_records`,
 `provenance_records`, `audit_events`, `documents`, `document_versions`, `jobs`, `job_attempts`, `job_results`,
-`outbox_events`, `policies`, `approvals`, `operations`, `operation_attempts`) use PostgreSQL RLS keyed on
+`outbox_events`, `policies`, `approvals`, `operations`, `operation_attempts`, `agent_tokens`) use PostgreSQL RLS keyed on
 `app.organization_id`, set per transaction by
 `internal/tenancy`. `users` is a global identity record and `sessions` is read before an organization context
 exists; both remain intentionally **not** RLS-protected. They are protected by separated database roles and a

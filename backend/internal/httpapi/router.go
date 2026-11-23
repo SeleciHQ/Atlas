@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"atlas/internal/agentaccess"
 	"atlas/internal/authorization"
 	"atlas/internal/documents"
 	"atlas/internal/governance"
@@ -41,6 +42,7 @@ type Deps struct {
 	Queue          *jobs.Queue
 	Reconciliation *reconciliation.Service
 	Governance     *governance.Service
+	Agents         *agentaccess.Service
 	StorageHandler http.Handler
 	Authorizer     authorization.Service
 	Orgs           *orgs.Service
@@ -77,6 +79,19 @@ func NewRouter(deps Deps) http.Handler {
 			r.Use(authenticate(deps))
 			r.Get("/auth/me", meHandler)
 			r.Post("/auth/logout", logoutHandler(deps))
+			r.Get("/agents/me", agentMeHandler)
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Get("/agents", listAgentsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Post("/agents", createAgentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Post("/agents/{agentID}/revoke", revokeAgentHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Get("/agents/{agentID}/tokens", listAgentTokensHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Post("/agents/{agentID}/tokens", issueAgentTokenHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionAgentsManage)).
+				Post("/agents/{agentID}/tokens/{tokenID}/revoke", revokeAgentTokenHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionMembersRead)).
 				Get("/members", membersHandler(deps))
 			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).

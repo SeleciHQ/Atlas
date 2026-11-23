@@ -43,3 +43,29 @@ func TestNonHumanPrincipalsAreDenied(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentScopeAuthorization(t *testing.T) {
+	service := NewService()
+	agent := identity.Principal{Kind: identity.KindAgent, Scopes: []string{"invoices:read", "reconciliation:read"}}
+	if !service.AllowedScope(agent, "invoices:read") || !service.AllowedScope(agent, "reconciliation:read") {
+		t.Fatal("granted agent scopes were denied")
+	}
+	if service.AllowedScope(agent, "reconciliation:run") || service.AllowedScope(agent, "invoices:write") {
+		t.Fatal("ungranted agent scope was allowed")
+	}
+	if err := service.AuthorizeScope(agent, "reconciliation:read"); err != nil {
+		t.Fatalf("authorize scope: %v", err)
+	}
+
+	human := identity.Principal{Kind: identity.KindHuman, Role: identity.RoleMember}
+	if !service.AllowedScope(human, "reconciliation:read") {
+		t.Fatal("member should map to reconciliation:read permission")
+	}
+	if service.AllowedScope(human, "invoices:read") {
+		t.Fatal("human scope without a permission mapping must be denied")
+	}
+	unknown := identity.Principal{Kind: identity.KindWorkload}
+	if service.AllowedScope(unknown, "invoices:read") {
+		t.Fatal("workload scope was allowed")
+	}
+}

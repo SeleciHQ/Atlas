@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"atlas/internal/authorization"
@@ -53,11 +54,35 @@ func clearSessionCookie(w http.ResponseWriter, deps Deps) {
 	})
 }
 
-// authenticate resolves the session cookie into a principal. Every protected
-// route passes through this middleware; there is no alternate permission path.
+// bearerToken extracts an agent bearer token. Agent tokens use the standard
+// Authorization header; human sessions continue to use the HttpOnly cookie.
+func bearerToken(r *http.Request) string {
+	header := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(header) < 7 || !strings.EqualFold(header[:7], "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(header[7:])
+}
+
+// authenticate resolves a bearer token or session cookie into a principal.
+// Every protected route passes through this middleware; there is no alternate
+// permission path.
 func authenticate(deps Deps) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token := bearerToken(r); token != "" {
+				if deps.Agents == nil {
+					WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "agent_authentication_unavailable", "Agent authentication is not configured."))
+					return
+				}
+				principal, err := deps.Agents.AuthenticateToken(r.Context(), token)
+				if err != nil {
+					WriteError(w, r, deps.Logger, err)
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(identity.WithPrincipal(r.Context(), principal)))
+				return
+			}
 			if deps.Identity == nil {
 				WriteError(w, r, deps.Logger, apperr.New(apperr.KindUnavailable, "authentication_unavailable", "Authentication is not configured."))
 				return

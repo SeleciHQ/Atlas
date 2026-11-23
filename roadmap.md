@@ -51,7 +51,7 @@ Status values: **Not started**, **In progress**, **Blocked**, **Under review**, 
 | 6 | Document extraction and entity resolution | Phases 4–5 | Completed | Validated extraction; evidence-backed entity links; no silent merges |
 | 7 | Invoice reconciliation engine | Phases 5–6 | Completed | Deterministic, versioned, explainable two- and three-way reconciliation |
 | 8 | Governance and execution | Phases 2, 5, 7 | In progress | Central policy, approvals, idempotent execution, full audit attribution |
-| 9 | MCP and REST interfaces | Phases 7–8 | Not started | External agent can authenticate, discover, reconcile and act within policy |
+| 9 | MCP and REST interfaces | Phases 7–8 | In progress | External agent can authenticate, discover, reconcile and act within policy |
 | 10 | End-to-end integration and pilot | Phase 9 + ADR-003 + ADR-005 | Not started | Controlled pilot with real connector, real documents and real agent usage |
 
 **Phase 0 note:** completed when Phase 1 was explicitly authorized (2026-11-18). The assessment and
@@ -1153,6 +1153,16 @@ Atlas does not build, host or provide agents: each customer connects its own age
 - ADR-002/ADR-004 — production token issuance depends on these; development issuer acceptable for the phase.
 - Risk: duplicated logic creeping into MCP handlers. Mitigation: shared service tests and code review focused
   on handler thinness.
+
+**Phase 9 status note (2026-11-23):** implementation started on explicit owner authorization while Phase 8 UI
+surfacing remains deferred. Migration `0016_agent_tokens` and `internal/agentaccess` add the agent connection
+lifecycle (create/list/revoke, scoped connections, token issue/list/revoke), hashed-token bearer
+authentication with pre-tenant resolution, and scope-based authorization (`invoices:read`,
+`purchase_orders:read`, `deliveries:read`, `suppliers:read`, `reconciliation:read|run`,
+`discrepancies:read`, `actions:request`, `approvals:request`, `operations:read`). REST management endpoints
+are under `/v1/agents`; human sessions and agent bearer tokens share one authentication middleware. Token
+issuance is the roadmap-permitted development issuer pending ADR-002/ADR-004. Next: shared query/read
+services and the eleven tools over REST and MCP (Streamable HTTP), then contract and client-matrix work.
 
 ---
 

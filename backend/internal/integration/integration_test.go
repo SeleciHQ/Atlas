@@ -100,23 +100,23 @@ func TestMigrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pending: %v", err)
 	}
-	if pending != 15 {
-		t.Fatalf("pending = %d, want 15", pending)
+	if pending != 16 {
+		t.Fatalf("pending = %d, want 16", pending)
 	}
 
 	applied, err := migrate.Up(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("up: %v", err)
 	}
-	if applied != 15 {
-		t.Fatalf("applied = %d, want 15", applied)
+	if applied != 16 {
+		t.Fatalf("applied = %d, want 16", applied)
 	}
 
 	status, err := migrate.Status(ctx, pool, fsys)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if len(status.Applied) != 15 || status.PendingCount != 0 || status.LatestApplied != "0015" {
+	if len(status.Applied) != 16 || status.PendingCount != 0 || status.LatestApplied != "0016" {
 		t.Fatalf("unexpected status: %+v", status)
 	}
 
@@ -128,12 +128,12 @@ func TestMigrationLifecycle(t *testing.T) {
 		t.Fatal("platform_metadata table was not created")
 	}
 
-	reverted, err := migrate.Down(ctx, pool, fsys, 12)
+	reverted, err := migrate.Down(ctx, pool, fsys, 13)
 	if err != nil {
 		t.Fatalf("down: %v", err)
 	}
-	if reverted != 12 {
-		t.Fatalf("reverted = %d, want 12", reverted)
+	if reverted != 13 {
+		t.Fatalf("reverted = %d, want 13", reverted)
 	}
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('platform_metadata') IS NOT NULL`).Scan(&tablePresent); err != nil {
 		t.Fatalf("table check after down: %v", err)
@@ -265,8 +265,8 @@ func TestHealthAndReadiness(t *testing.T) {
 
 	// A schema with an extra unapplied migration must fail readiness.
 	pendingFS := migrationsFS(t)
-	pendingFS["0016_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
-	pendingFS["0016_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0017_extra.up.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+	pendingFS["0017_extra.down.sql"] = &fstest.MapFile{Data: []byte("SELECT 1;")}
 	pendingRouter := httpapi.NewRouter(httpapi.Deps{
 		Logger: testLogger(), Pool: pool, Migrations: pendingFS,
 		ServiceName: "atlas-api", Version: "test",
