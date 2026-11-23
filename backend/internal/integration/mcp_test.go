@@ -179,6 +179,23 @@ func TestMCPToolsAndAuthorization(t *testing.T) {
 	}); crossPrincipal.Code != http.StatusForbidden {
 		t.Fatalf("cross-principal session status = %d, want 403", crossPrincipal.Code)
 	}
+	progress := mcpPostHeaders(t, handler, issued.Token, "", sessionID, "text/event-stream", map[string]any{
+		"jsonrpc": "2.0", "id": 35, "method": "tools/call",
+		"params": map[string]any{
+			"name":      "search_invoices",
+			"arguments": map[string]any{},
+			"_meta":     map[string]any{"progressToken": "p-1"},
+		},
+	})
+	progressBody := progress.Body.String()
+	if progress.Code != http.StatusOK ||
+		!strings.Contains(progress.Header().Get("Content-Type"), "text/event-stream") ||
+		!strings.Contains(progressBody, "notifications/progress") ||
+		!strings.Contains(progressBody, `"progressToken":"p-1"`) ||
+		!strings.Contains(progressBody, "structuredContent") ||
+		strings.Count(progressBody, "event: message") != 3 {
+		t.Fatalf("progress stream = %d %q %s", progress.Code, progress.Header().Get("Content-Type"), progressBody)
+	}
 
 	notification := mcpPost(t, handler, issued.Token, "", map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized",

@@ -299,7 +299,9 @@ negotiates the client's requested version and pins its default.
   JSON-RPC response is framed as an SSE `message` event. `initialize` returns an optional `MCP-Session-Id`;
   subsequent requests may send it, `DELETE` terminates it, unknown ids return 404 and a session used by a
   different agent returns 403. Sessions are in-process (stateless requests remain supported), so multi-instance
-  deployments need sticky routing or should stay stateless.
+  deployments need sticky routing or should stay stateless. `tools/call` requests with
+  `params._meta.progressToken` and an SSE `Accept` receive `notifications/progress` events before and after the
+  response.
 - Eleven tools: `search_invoices`, `get_invoice`, `search_purchase_orders`, `get_delivery_records`,
   `get_supplier`, `reconcile_invoice`, `get_reconciliation`, `search_discrepancies`,
   `request_supplier_followup`, `request_approval`, `get_operation_status`. Each tool declares its scope;
@@ -317,7 +319,7 @@ negotiates the client's requested version and pins its default.
   `go test ./internal/mcpapi -run TestToolSchemasSnapshot -update`.
 - Config: `DATABASE_URL`, `MCP_PORT` (falls back to `PORT`, default `8081`), `LOG_LEVEL`, `ATLAS_ENV`. The
   command refuses `ATLAS_ENV=production` until ADR-002/ADR-004 production token issuance exists.
-- Not yet implemented: server-initiated progress notifications and the ADR-009 client matrix.
+- Not yet implemented: the ADR-009 client matrix and live client validation.
 
 ## Canonical model and ontology (Phase 6, complete)
 

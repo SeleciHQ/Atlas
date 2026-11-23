@@ -146,6 +146,13 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if request.Method == "tools/call" && wantsEventStream(r) && len(bytes.TrimSpace(request.ID)) > 0 {
+		if token := progressToken(request.Params); token != nil {
+			h.serveToolProgress(w, r, principal, request, token)
+			return
+		}
+	}
+
 	w.Header().Set("MCP-Protocol-Version", defaultProtocolVersion)
 	result, rpcErr := h.dispatch(r, principal, request)
 	notification := len(bytes.TrimSpace(request.ID)) == 0
@@ -162,25 +169,81 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	response := rpcResponse{JSONRPC: "2.0", ID: request.ID, Result: result}
 	if wantsEventStream(r) {
-		encoded, err := json.Marshal(response)
-		if err != nil {
-			h.writeError(w, http.StatusInternalServerError, request.ID, -32603, "encode response", nil)
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("event: message\ndata: "))
-		_, _ = w.Write(encoded)
-		_, _ = w.Write([]byte("\n\n"))
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
+		startEventStream(w)
+		writeSSE(w, response)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// serveToolProgress streams a progress notification before and after a tool
+// call, then the JSON-RPC response. Clients opt in by sending
+// params._meta.progressToken and Accept: text/event-stream.
+func (h *handler) serveToolProgress(w http.ResponseWriter, r *http.Request, principal identity.Principal, request rpcRequest, token json.RawMessage) {
+	var params struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(request.Params, &params)
+	startEventStream(w)
+	writeSSE(w, progressNotification(token, 1, 2, "running "+params.Name))
+
+	result, rpcErr := h.dispatch(r, principal, request)
+	if rpcErr != nil {
+		writeSSE(w, rpcResponse{JSONRPC: "2.0", ID: request.ID,
+			Error: &rpcError{Code: rpcErr.Code, Message: rpcErr.Message, Data: rpcErr.Data}})
+		return
+	}
+	writeSSE(w, progressNotification(token, 2, 2, "completed "+params.Name))
+	writeSSE(w, rpcResponse{JSONRPC: "2.0", ID: request.ID, Result: result})
+}
+
+func progressNotification(token json.RawMessage, progress, total int, message string) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/progress",
+		"params": map[string]any{
+			"progressToken": token,
+			"progress":      progress,
+			"total":         total,
+			"message":       message,
+		},
+	}
+}
+
+func progressToken(params json.RawMessage) json.RawMessage {
+	var parsed struct {
+		Meta struct {
+			ProgressToken json.RawMessage `json:"progressToken"`
+		} `json:"_meta"`
+	}
+	if err := json.Unmarshal(params, &parsed); err != nil {
+		return nil
+	}
+	if len(bytes.TrimSpace(parsed.Meta.ProgressToken)) == 0 {
+		return nil
+	}
+	return parsed.Meta.ProgressToken
+}
+
+func startEventStream(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+}
+
+func writeSSE(w http.ResponseWriter, payload any) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	_, _ = w.Write([]byte("event: message\ndata: "))
+	_, _ = w.Write(encoded)
+	_, _ = w.Write([]byte("\n\n"))
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func (h *handler) terminateSession(w http.ResponseWriter, r *http.Request) {
