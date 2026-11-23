@@ -39,6 +39,15 @@ func TestGovernanceApprovalsAndIdempotency(t *testing.T) {
 	if _, _, err := service.StartOperation(ctx, organizationID, approvalID, "payment.execute", "op-key-1", []byte(`{}`)); err == nil {
 		t.Fatal("operation started with a pending approval")
 	}
+	if _, err := admin.Exec(ctx, `UPDATE approvals SET expires_at = now() - interval '1 hour' WHERE id = $1`, approvalID); err != nil {
+		t.Fatalf("expire approval: %v", err)
+	}
+	if err := service.Decide(ctx, organizationID, approvalID, "", true, "late"); err == nil {
+		t.Fatal("expired approval was decided")
+	}
+	if _, err := admin.Exec(ctx, `UPDATE approvals SET expires_at = NULL WHERE id = $1`, approvalID); err != nil {
+		t.Fatalf("unexpire approval: %v", err)
+	}
 	if err := service.Decide(ctx, organizationID, approvalID, "", true, "ok"); err != nil {
 		t.Fatalf("decide: %v", err)
 	}

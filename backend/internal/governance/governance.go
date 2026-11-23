@@ -95,7 +95,8 @@ func (s *Service) Decide(ctx context.Context, organizationID, approvalID, decide
 	return s.withOrg(ctx, organizationID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE approvals SET status = $3, decided_by = nullif($4, '')::uuid, decision_reason = $5, decided_at = now()
-			WHERE organization_id = $1 AND id = $2 AND status = 'pending'`,
+			WHERE organization_id = $1 AND id = $2 AND status = 'pending'
+			  AND (expires_at IS NULL OR expires_at > now())`,
 			organizationID, approvalID, status, decidedBy, reason)
 		if err != nil {
 			return err
