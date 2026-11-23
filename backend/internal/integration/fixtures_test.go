@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"atlas/internal/canonical"
 )
 
@@ -81,66 +83,15 @@ func TestCanonicalFixtureCorpus(t *testing.T) {
 
 	for _, scenario := range corpus.Scenarios {
 		organizationID := seedQueueOrganization(t, admin)
-		supplier, err := service.CreateSupplier(ctx, organizationID, scenario.Supplier.Name, scenario.Supplier.Currency)
-		if err != nil {
-			t.Fatalf("%s: create supplier: %v", scenario.Name, err)
-		}
-		orders := map[string]string{}
-		poLines := map[string]map[int]string{}
-		for _, order := range scenario.Orders {
-			created, err := service.CreatePurchaseOrder(ctx, organizationID, supplier.ID, order.Number, order.Currency, order.TotalMinor)
-			if err != nil {
-				t.Fatalf("%s: create order %s: %v", scenario.Name, order.Number, err)
-			}
-			orders[order.Number] = created.ID
-			poLines[order.Number] = map[int]string{}
-			for _, line := range order.Lines {
-				createdLine, err := service.AddPOLine(ctx, organizationID, created.ID, line.Line, line.Description, line.Quantity, line.Unit, line.UnitPriceMinor, line.Currency)
-				if err != nil {
-					t.Fatalf("%s: add PO line: %v", scenario.Name, err)
-				}
-				poLines[order.Number][line.Line] = createdLine.ID
-			}
-		}
-		for _, delivery := range scenario.Deliveries {
-			created, err := service.AddDelivery(ctx, organizationID, supplier.ID, orders[delivery.PONumber], delivery.Number, delivery.DeliveredOn)
-			if err != nil {
-				t.Fatalf("%s: add delivery: %v", scenario.Name, err)
-			}
-			for _, line := range delivery.Lines {
-				if err := service.AddDeliveryLine(ctx, organizationID, created.ID, poLines[line.PONumber][line.Line], line.Quantity); err != nil {
-					t.Fatalf("%s: add delivery line: %v", scenario.Name, err)
-				}
-			}
-		}
-		var firstInvoice string
-		for _, invoice := range scenario.Invoices {
-			created, err := service.CreateInvoice(ctx, organizationID, supplier.ID, invoice.Number, invoice.Currency, invoice.TotalMinor)
-			if err != nil {
-				t.Fatalf("%s: create invoice: %v", scenario.Name, err)
-			}
-			if firstInvoice == "" {
-				firstInvoice = created.ID
-			}
-			for _, line := range invoice.Lines {
-				if _, err := service.AddInvoiceLine(ctx, organizationID, created.ID, line.Line, line.Description, line.Quantity, line.Unit, line.UnitPriceMinor, line.Currency); err != nil {
-					t.Fatalf("%s: add invoice line: %v", scenario.Name, err)
-				}
-			}
-			for _, number := range invoice.PONumbers {
-				if err := service.LinkInvoicePO(ctx, organizationID, created.ID, orders[number], nil); err != nil {
-					t.Fatalf("%s: link invoice PO: %v", scenario.Name, err)
-				}
-			}
-		}
-		if firstInvoice != "" {
-			links, err := service.CountInvoicePOLinks(ctx, organizationID, firstInvoice)
+		seeded := seedScenario(t, app, organizationID, scenario)
+		if len(seeded.Invoices) > 0 {
+			links, err := service.CountInvoicePOLinks(ctx, organizationID, seeded.Invoices[0])
 			if err != nil || links != scenario.Expect.InvoicePOLinks {
 				t.Fatalf("%s: invoice PO links = %d, %v; want %d", scenario.Name, links, err, scenario.Expect.InvoicePOLinks)
 			}
 		}
 		if scenario.Expect.Fulfilled != "" {
-			detail, err := service.GetPurchaseOrderDetail(ctx, organizationID, orders[scenario.Deliveries[0].PONumber])
+			detail, err := service.GetPurchaseOrderDetail(ctx, organizationID, seeded.Orders[scenario.Deliveries[0].PONumber])
 			if err != nil {
 				t.Fatalf("%s: PO detail: %v", scenario.Name, err)
 			}
@@ -149,6 +100,70 @@ func TestCanonicalFixtureCorpus(t *testing.T) {
 			}
 		}
 	}
+}
+
+type seededScenario struct {
+	SupplierID string
+	Orders     map[string]string
+	POLines    map[string]map[int]string
+	Invoices   []string
+}
+
+// seedScenario writes one fixture-corpus scenario through the canonical service.
+func seedScenario(t *testing.T, appPool *pgxpool.Pool, organizationID string, scenario fixtureScenario) seededScenario {
+	t.Helper()
+	ctx := context.Background()
+	service := canonical.NewService(appPool)
+	seeded := seededScenario{Orders: map[string]string{}, POLines: map[string]map[int]string{}}
+	supplier, err := service.CreateSupplier(ctx, organizationID, scenario.Supplier.Name, scenario.Supplier.Currency)
+	if err != nil {
+		t.Fatalf("%s: create supplier: %v", scenario.Name, err)
+	}
+	seeded.SupplierID = supplier.ID
+	for _, order := range scenario.Orders {
+		created, err := service.CreatePurchaseOrder(ctx, organizationID, supplier.ID, order.Number, order.Currency, order.TotalMinor)
+		if err != nil {
+			t.Fatalf("%s: create order %s: %v", scenario.Name, order.Number, err)
+		}
+		seeded.Orders[order.Number] = created.ID
+		seeded.POLines[order.Number] = map[int]string{}
+		for _, line := range order.Lines {
+			createdLine, err := service.AddPOLine(ctx, organizationID, created.ID, line.Line, line.Description, line.Quantity, line.Unit, line.UnitPriceMinor, line.Currency)
+			if err != nil {
+				t.Fatalf("%s: add PO line: %v", scenario.Name, err)
+			}
+			seeded.POLines[order.Number][line.Line] = createdLine.ID
+		}
+	}
+	for _, delivery := range scenario.Deliveries {
+		created, err := service.AddDelivery(ctx, organizationID, supplier.ID, seeded.Orders[delivery.PONumber], delivery.Number, delivery.DeliveredOn)
+		if err != nil {
+			t.Fatalf("%s: add delivery: %v", scenario.Name, err)
+		}
+		for _, line := range delivery.Lines {
+			if err := service.AddDeliveryLine(ctx, organizationID, created.ID, seeded.POLines[line.PONumber][line.Line], line.Quantity); err != nil {
+				t.Fatalf("%s: add delivery line: %v", scenario.Name, err)
+			}
+		}
+	}
+	for _, invoice := range scenario.Invoices {
+		created, err := service.CreateInvoice(ctx, organizationID, supplier.ID, invoice.Number, invoice.Currency, invoice.TotalMinor)
+		if err != nil {
+			t.Fatalf("%s: create invoice: %v", scenario.Name, err)
+		}
+		seeded.Invoices = append(seeded.Invoices, created.ID)
+		for _, line := range invoice.Lines {
+			if _, err := service.AddInvoiceLine(ctx, organizationID, created.ID, line.Line, line.Description, line.Quantity, line.Unit, line.UnitPriceMinor, line.Currency); err != nil {
+				t.Fatalf("%s: add invoice line: %v", scenario.Name, err)
+			}
+		}
+		for _, number := range invoice.PONumbers {
+			if err := service.LinkInvoicePO(ctx, organizationID, created.ID, seeded.Orders[number], nil); err != nil {
+				t.Fatalf("%s: link invoice PO: %v", scenario.Name, err)
+			}
+		}
+	}
+	return seeded
 }
 
 func TestOntologyValidationFailsClosed(t *testing.T) {

@@ -1175,7 +1175,8 @@ reconciliation views with organization/scope enforcement, tool schemas are snaps
 optional in-process sessions (`MCP-Session-Id`, DELETE termination, principal binding), SSE framing when
 requested and `notifications/progress` events for tool calls with a progress token. REST/MCP parity tests
 compare shared read results. ADR-009 records that Atlas-side conformance is complete but no external client
-is validated yet; production OAuth (ADR-002/ADR-004) and real-client sessions remain the gate.
+is validated yet; the fixture corpus now runs end-to-end through the MCP entrypoint (reconcile, worker,
+status, reconciliation reads). Production OAuth (ADR-002/ADR-004) and real-client sessions remain the gate.
 
 ---
 
