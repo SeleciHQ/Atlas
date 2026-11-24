@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS fx_rates_source;
+ALTER TABLE fx_rates DROP COLUMN IF EXISTS source;

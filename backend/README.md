@@ -223,6 +223,15 @@ matching: invoice total vs linked PO totals, currency checks, split invoices acr
 trigger and MCP tool create an idempotent `reconciliation.run` operation (honoring `Idempotency-Key`), enqueue
 the job, and the worker records success/failure on that operation for status polling.
 
+## FX and UoM (ADR-008)
+
+`fx_rates` and `uom_conversions` are organization-scoped dated snapshots; reconciliation consumes stored rates
+and fails closed when a pair is missing. `internal/fx` fetches the ECB euro reference set
+(`source = 'ecb'`) and records it idempotently per organization; manual and organization overrides use
+`source = 'manual'` / `'organization'`. The UoM catalog is Atlas-owned with per-organization factors. There is
+no live FX lookup during reconciliation and no external UoM provider in v0. Scheduled ECB refresh and run-level
+rate/timestamp evidence are Phase 10 tasks.
+
 ## Governance and execution (Phase 8, in progress)
 
 Migration `0014_governance` adds versioned `policies`, `approvals`, `operations` and `operation_attempts`

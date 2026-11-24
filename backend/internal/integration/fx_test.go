@@ -2,11 +2,14 @@ package integration
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
 	"atlas/internal/canonical"
+	"atlas/internal/fx"
 )
 
 func TestDatabaseConverter(t *testing.T) {
@@ -34,5 +37,44 @@ func TestDatabaseConverter(t *testing.T) {
 	}
 	if _, err := converter.ConvertMoney(ctx, organizationID, 1000, "USD", "EUR"); err == nil {
 		t.Fatal("missing reverse rate should fail closed")
+	}
+}
+
+func TestECBRateSnapshot(t *testing.T) {
+	admin, app, _ := setupTenantSchema(t)
+	organizationID := seedQueueOrganization(t, admin)
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01">
+<Cube><Cube time="2026-11-21"><Cube currency="USD" rate="1.1000"/></Cube></Cube></gesmes:Envelope>`))
+	}))
+	defer server.Close()
+
+	service := fx.NewService(app, &fx.ECBProvider{URL: server.URL, Client: server.Client()})
+	recorded, err := service.RefreshECB(ctx, organizationID)
+	if err != nil || recorded != 1 {
+		t.Fatalf("refresh = %d %v", recorded, err)
+	}
+	if again, err := service.RefreshECB(ctx, organizationID); err != nil || again != 0 {
+		t.Fatalf("duplicate refresh = %d %v", again, err)
+	}
+	var source string
+	var rate string
+	if err := admin.QueryRow(ctx, `
+		SELECT source, rate::text FROM fx_rates
+		WHERE organization_id = $1 AND base_currency = 'EUR' AND quote_currency = 'USD'`,
+		organizationID).Scan(&source, &rate); err != nil {
+		t.Fatalf("read fx rate: %v", err)
+	}
+	if source != "ecb" {
+		t.Fatalf("source = %s", source)
+	}
+	converted, err := canonical.NewDatabaseConverter(app).ConvertMoney(ctx, organizationID, 1000, "EUR", "USD")
+	if err != nil || converted != 1100 {
+		t.Fatalf("converted = %d %v", converted, err)
+	}
+	organizationB := seedQueueOrganization(t, admin)
+	if _, err := canonical.NewDatabaseConverter(app).ConvertMoney(ctx, organizationB, 1000, "EUR", "USD"); err == nil {
+		t.Fatal("cross-tenant FX rate was visible")
 	}
 }

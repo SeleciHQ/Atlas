@@ -2212,6 +2212,35 @@ defended to finance users; multi-currency and multi-unit customers cannot be onb
 available FX sources and licensing; rate precision and revision behaviour; supported units and conversion
 standards; catalog maintenance effort; reproducibility requirements; audit expectations.
 
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** Reconciliation must be reproducible and defensible. The sandbox needs a deterministic rate
+> source without a customer-specific accounting policy. The converter already stores per-organization
+> `fx_rates` and `uom_conversions` snapshots and fails closed on missing pairs.
+>
+> **Options considered:** (a) ECB euro reference rates recorded as dated snapshots, plus manual/organization
+> overrides; (b) a commercial FX vendor; (c) live rate lookup during reconciliation; (d) organization-owned
+> UoM catalog versus an external units service. Live lookup breaks reproducibility; a commercial vendor adds
+> licensing before the sandbox; an external units service has no demonstrated need.
+>
+> **Recommendation:** ECB euro reference rates as the default source, fetched daily and recorded per
+> organization with `source = 'ecb'`; manual and organization overrides use `source = 'manual'` and
+> `'organization'`. Reconciliation consumes stored snapshots only, never a live provider. The UoM catalog is
+> Atlas-owned: canonical units plus per-organization conversion factors; organizations may override factors.
+>
+> **Consequences:** ECB provides EUR-based pairs only; non-EUR pairs require explicit organization rates
+> (no triangulation in v0). Rate precision is the ECB feed's precision; revisions create new dated snapshots.
+> Transaction-date versus period-end policy is organization policy: v0 selects the latest recorded rate at or
+> before the run, and the run evidence must record the rate and effective timestamp when the engine consumes
+> it (tracked for Phase 10). The sandbox records rates via the `internal/fx` ECB provider; scheduled refresh
+> is a Phase 10 operational task.
+>
+> **Final decision:** ECB reference rates (EUR-based) as the default FX source with dated per-organization
+> snapshots and explicit overrides; Atlas-owned UoM catalog with per-organization factors; no live FX calls
+> during reconciliation and no external UoM provider in v0.
+>
+> **Date finalized:** 2026-11-23.
+
 ### ADR-009 — MCP client support matrix
 
 **What needs to be decided.** Which external agent products and configurations Atlas officially supports, and
@@ -2301,7 +2330,7 @@ demand from the pipeline.
 
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, ADR-006, ADR-007 and ADR-010 are Accepted; the other four ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, ADR-006, ADR-007, ADR-008 and ADR-010 are Accepted; the other three ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
@@ -2312,7 +2341,7 @@ Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, 
 | ADR-005 | Document extraction engine/provider | Open | Provider-independent interface + mock; benchmark before selection | Phase 6 corpus, ADR-007, ADR-010 | Benchmark by Phase 6 gate; selection before Phase 10 production extraction | Blocks production extraction quality, cost and privacy review | Head of Engineering with Product Lead |
 | ADR-006 | Observability backend | Accepted | **CloudWatch + X-Ray** - accepted 2026-11-23: central ADOT collector gateway, OTLP from apps, logs via CloudWatch Logs, 30-day retention; vendor-neutral instrumentation | ADR-001 | Resolved | Unblocks durable telemetry/alerting; config in `backend/deploy/observability.md` | Platform Lead |
 | ADR-007 | Retention and legal-hold policy | Accepted | **Fixed v0 defaults** - accepted 2026-11-23: documents/source 13 months, canonical/reconciliation/audit 7 years, jobs 30 days, revoked credentials 90 days, telemetry 30 days; legal holds; governed deletion; sweeps/export in Phase 10 | Contracts, ADR-005, ADR-010 | Resolved | Unblocks sandbox data handling; per-organization overrides post-sandbox | Compliance Lead |
-| ADR-008 | FX rate source and UoM catalog ownership | Open | Internal abstractions; record rate source/rate/timestamp and conversion evidence | Phase 7 engine, customer accounting policy, ADR-005 | Interfaces by Phase 7 gate; final before Phase 10 pilot | Blocks defensible multi-currency/unit reconciliation in production | Product Lead with Finance Operations Lead |
+| ADR-008 | FX rate source and UoM catalog ownership | Accepted | **ECB reference rates + Atlas-owned UoM catalog** - accepted 2026-11-23: dated EUR-based snapshots with manual/organization overrides, no live FX during reconciliation; per-organization UoM factors | Phase 7 engine, customer accounting policy, ADR-005 | Resolved for sandbox/v0 | Unblocks defensible FX/UoM handling; run evidence records rate/timestamp when engine consumes it | Product Lead with Finance Operations Lead |
 | ADR-009 | MCP client support matrix | Open | One Atlas MCP implementation; validate each client independently | Phase 9, ADR-002, customer plans | During Phase 9; before declaring a client supported | Risks overstated compatibility, broken integrations, unsupported auth flows | Head of Engineering |
 | ADR-010 | Data residency and tenancy tiers | Accepted | **Shared multi-tenant, single region** - accepted 2026-11-23: sandbox `eu-west-1`, strict logical isolation; dedicated tiers/multi-region/customer residency deferred | ADR-001, ADR-007, commercial input | Resolved for sandbox/v0 | Unblocks sandbox region; no residency commitment until a real customer | Head of Engineering with Compliance Lead |
 
