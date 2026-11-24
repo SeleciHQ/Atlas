@@ -24,6 +24,7 @@ import (
 	"atlas/internal/platform/apperr"
 	"atlas/internal/query"
 	"atlas/internal/reconciliation"
+	"atlas/internal/retention"
 )
 
 // Deps are the dependencies required to build the HTTP router.
@@ -45,6 +46,7 @@ type Deps struct {
 	Query          *query.Service
 	Governance     *governance.Service
 	Agents         *agentaccess.Service
+	Retention      *retention.Service
 	StorageHandler http.Handler
 	Authorizer     authorization.Service
 	Orgs           *orgs.Service
@@ -158,6 +160,14 @@ func NewRouter(deps Deps) http.Handler {
 				Get("/operations", listOperationsHandler(deps))
 			r.With(requireScope(deps, "operations:read")).
 				Get("/operations/{operationID}", getOperationHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
+				Get("/legal-holds", listLegalHoldsHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
+				Post("/legal-holds", placeLegalHoldHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationManage)).
+				Post("/legal-holds/{holdID}/release", releaseLegalHoldHandler(deps))
+			r.With(requirePermission(deps, authorization.PermissionOrganizationRead)).
+				Get("/retention/policies", retentionPoliciesHandler(deps))
 		})
 	})
 

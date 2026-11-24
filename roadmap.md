@@ -1192,8 +1192,10 @@ provider); ADR-007 retention defaults agreed; ADR-010 residency decision made fo
 runbook in `backend/deploy/aws.md` and containers in `backend/Dockerfile*`. ADR-004 (workload identity) is
 **Accepted** — per-process ECS task roles, Secrets Manager-injected database credentials, no static AWS keys
 (`backend/deploy/iam.md`). ADR-006 (observability) is **Accepted** — CloudWatch + X-Ray behind a central ADOT
-collector gateway, logs via CloudWatch, vendor-neutral OTLP (`backend/deploy/observability.md`). The Phase 10
-sandbox will use realistic synthetic data rather than a live customer; prerequisites above still apply.
+collector gateway, logs via CloudWatch, vendor-neutral OTLP (`backend/deploy/observability.md`). ADR-007
+(retention) is **Accepted** — fixed v0 windows, `legal_holds`, governed deletion, with automated sweeps/export
+left for Phase 10. The Phase 10 sandbox will use realistic synthetic data rather than a live customer;
+prerequisites above still apply.
 
 **Implementation tasks:**
 

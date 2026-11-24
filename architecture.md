@@ -2138,6 +2138,54 @@ retrofitting; backup and R2 lifecycle rules may conflict with contract terms.
 data-processing agreements with extraction/infrastructure providers; audit retention expectations; backup
 retention capabilities; legal-hold procedures; export requirements.
 
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** Phase 10 runs on synthetic sandbox data, but retention and deletion must still be explicit
+> before any real customer data exists. R2 lifecycle rules, PostgreSQL backups and audit preservation must
+> agree with the chosen defaults.
+>
+> **Options considered:** (a) fixed conservative defaults with governed deletion and legal holds, plus a
+> documented per-organization policy extension point; (b) fully organization-configurable retention in v0;
+> (c) retain everything indefinitely. (b) needs customer-specific legal review before the sandbox; (c) is
+> unacceptable for document privacy and cost.
+>
+> **Recommendation:** fixed v0 defaults (below), legal holds, governed audited deletion, and organization
+> policy configuration deferred until a real customer contract exists.
+>
+> **Retention classes (v0/sandbox):**
+>
+> | Class | Default | Basis |
+> |---|---|---|
+> | Original documents + extracted content | 13 months after last activity | conservative sandbox/document lifecycle |
+> | Raw + normalized source records | 13 months after ingestion | follows documents |
+> | Canonical invoices/POs/deliveries/links | 7 years | financial records |
+> | Reconciliation runs, matches, discrepancies | 7 years | evidence for financial decisions |
+> | Audit events | 7 years, append-only | attribution/audit; never deleted while held |
+> | Jobs, attempts, results | 30 days | operational telemetry |
+> | Revoked integration/agent credentials and tokens | 90 days after revocation | incident review |
+> | Logs, traces, metrics | 30 days | ADR-006 |
+>
+> **Legal holds:** `legal_holds` records an active hold per `(organization, resource_type, resource_id)`;
+> deletion of a held resource is refused, release is audited, and duplicate active holds are rejected. Holds
+> apply to documents, source records, canonical invoices/POs, reconciliation runs, audit events and whole
+> organization data.
+>
+> **Deletion and export:** deletion is a governed, audited operation that checks for an active hold, removes
+> the resource and its derivatives (including R2 objects), and preserves required audit. Automated retention
+> sweeps and organization data export are Phase 10 tasks; until then nothing is deleted automatically.
+> Backup/R2 lifecycle windows must not be shorter than the class default. Per-organization overrides and
+> contractual retention terms are a post-sandbox extension.
+>
+> **Consequences:** sandbox data is bounded; real-customer contracts may require different windows and a
+> dedicated review before ingestion. Persistent legal holds can prevent cleanup and must be released
+> explicitly. Audit rows survive business-data deletion for the audit class.
+>
+> **Final decision:** fixed v0 retention defaults, legal holds, governed deletion and explicit export
+> requirements as above. Implementation: `internal/retention`, migration `0017_retention`, `/v1/legal-holds`
+> and `/v1/retention/policies`. Automated sweeps and export are tracked for Phase 10.
+>
+> **Date finalized:** 2026-11-23.
+
 ### ADR-008 — FX rate source and unit-of-measure catalog ownership
 
 **What needs to be decided.** The source of foreign-exchange rates (and the policy for transaction-date versus
@@ -2226,7 +2274,7 @@ demand from the pipeline.
 
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004 and ADR-006 are Accepted; the other six ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, ADR-006 and ADR-007 are Accepted; the other five ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
@@ -2236,7 +2284,7 @@ Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004 a
 | ADR-004 | Workload identity mechanism | Accepted | **ECS task roles per process** - accepted 2026-11-23: no shared task role, environment execution role for ECR/logs/Secrets Manager, per-process DB roles, no static AWS keys; RDS IAM auth/automated rotation deferred | ADR-001 | Resolved | Unblocks least-privilege production credentials; guidance in `backend/deploy/iam.md` | Security Lead with Platform Lead |
 | ADR-005 | Document extraction engine/provider | Open | Provider-independent interface + mock; benchmark before selection | Phase 6 corpus, ADR-007, ADR-010 | Benchmark by Phase 6 gate; selection before Phase 10 production extraction | Blocks production extraction quality, cost and privacy review | Head of Engineering with Product Lead |
 | ADR-006 | Observability backend | Accepted | **CloudWatch + X-Ray** - accepted 2026-11-23: central ADOT collector gateway, OTLP from apps, logs via CloudWatch Logs, 30-day retention; vendor-neutral instrumentation | ADR-001 | Resolved | Unblocks durable telemetry/alerting; config in `backend/deploy/observability.md` | Platform Lead |
-| ADR-007 | Retention and legal-hold policy | Open | Conservative defaults + organization policies; governed deletion; preserve required audit | Contracts, ADR-005, ADR-010 | Before accepting real customer documents (Phase 10 gate) | Blocks pilot data agreements, deletion workflows and storage lifecycle rules | Compliance Lead |
+| ADR-007 | Retention and legal-hold policy | Accepted | **Fixed v0 defaults** - accepted 2026-11-23: documents/source 13 months, canonical/reconciliation/audit 7 years, jobs 30 days, revoked credentials 90 days, telemetry 30 days; legal holds; governed deletion; sweeps/export in Phase 10 | Contracts, ADR-005, ADR-010 | Resolved | Unblocks sandbox data handling; per-organization overrides post-sandbox | Compliance Lead |
 | ADR-008 | FX rate source and UoM catalog ownership | Open | Internal abstractions; record rate source/rate/timestamp and conversion evidence | Phase 7 engine, customer accounting policy, ADR-005 | Interfaces by Phase 7 gate; final before Phase 10 pilot | Blocks defensible multi-currency/unit reconciliation in production | Product Lead with Finance Operations Lead |
 | ADR-009 | MCP client support matrix | Open | One Atlas MCP implementation; validate each client independently | Phase 9, ADR-002, customer plans | During Phase 9; before declaring a client supported | Risks overstated compatibility, broken integrations, unsupported auth flows | Head of Engineering |
 | ADR-010 | Data residency and tenancy tiers | Open | Shared multi-tenant with strict logical isolation; abstractions permit future regional/dedicated deployment | ADR-001, ADR-007, commercial input | Before production region selection and enterprise pilot (Phase 10) | Blocks residency commitments and region choice; risk of unsupported enterprise terms | Head of Engineering with Compliance Lead |

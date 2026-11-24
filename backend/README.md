@@ -391,6 +391,18 @@ collector config and alarms are in [`deploy/observability.md`](deploy/observabil
 service exposes `GET /healthz` for ALB health checks. The sandbox uses `eu-west-1`; the production region
 remains under ADR-010.
 
+## Retention and legal holds (ADR-007)
+
+Migration `0017_retention` adds `legal_holds`. `internal/retention` exposes the fixed v0 retention defaults and
+legal-hold operations; deletion must check a hold first, and placing/releasing a hold is audited.
+
+- Admin endpoints: `GET/POST /v1/legal-holds`, `POST /v1/legal-holds/{id}/release`; any member can read
+  `GET /v1/retention/policies`.
+- Defaults: documents/source records 13 months after activity; canonical and reconciliation history 7 years;
+  audit 7 years; jobs/results 30 days; revoked credentials 90 days; telemetry 30 days (ADR-006).
+- Automated retention sweeps and organization data export are Phase 10 tasks; nothing is deleted
+  automatically yet. Legal holds block deletion until explicitly released.
+
 ## Row-Level Security and database roles
 
 Tenant tables (`organizations`, `memberships`, `agent_connections`, `agent_scopes`, `integrations`,
