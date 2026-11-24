@@ -2272,9 +2272,36 @@ requirements; dedicated-tier commitments could be made that the architecture doe
 regulations; provider regional coverage; cost of per-region or dedicated deployments; operational complexity;
 demand from the pipeline.
 
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** Phase 10 runs on synthetic sandbox data with no customer residency commitment. ADR-001 selects
+> AWS and ADR-007 sets retention. Atlas must choose a tenancy posture and a region for the sandbox without
+> promising dedicated infrastructure or multi-region service prematurely.
+>
+> **Options considered:** (a) shared multi-tenant with strict logical isolation, single region, dedicated
+> tiers deferred; (b) dedicated infrastructure per customer from day one; (c) multi-region active-active.
+> (b) and (c) add cost and operational surface before any customer requires them.
+>
+> **Recommendation:** shared multi-tenant with strict logical isolation. Every row is organization-scoped with
+> RLS; object keys are organization-prefixed; credentials are bound to organization + integration/connection.
+> The sandbox runs in **AWS `eu-west-1`** with RDS backups and the R2 bucket scoped to the same region
+> posture. No residency commitment is offered for the sandbox.
+>
+> **Consequences:** single-region availability for v0; a future region or dedicated tier becomes a separate
+> deployment with organization routing rather than an in-place multi-region rewrite. WorkOS identity metadata
+> and Cloudflare R2 location hints must be reviewed before any real customer residency commitment. Per-region
+> cost, latency and support access are revisited with the first real pilot customer.
+>
+> **Final decision:** shared multi-tenant, single-region (`eu-west-1`) for the sandbox and v0. Dedicated
+> tenancy tiers, multi-region deployment and customer-specific residency commitments are deferred until a
+> real customer requires them. Organization-scoped schema, RLS, keys and storage prefixes keep that path
+> open without implementing it now.
+>
+> **Date finalized:** 2026-11-23.
+
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, ADR-006 and ADR-007 are Accepted; the other five ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, ADR-006, ADR-007 and ADR-010 are Accepted; the other four ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
@@ -2287,7 +2314,7 @@ Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004, 
 | ADR-007 | Retention and legal-hold policy | Accepted | **Fixed v0 defaults** - accepted 2026-11-23: documents/source 13 months, canonical/reconciliation/audit 7 years, jobs 30 days, revoked credentials 90 days, telemetry 30 days; legal holds; governed deletion; sweeps/export in Phase 10 | Contracts, ADR-005, ADR-010 | Resolved | Unblocks sandbox data handling; per-organization overrides post-sandbox | Compliance Lead |
 | ADR-008 | FX rate source and UoM catalog ownership | Open | Internal abstractions; record rate source/rate/timestamp and conversion evidence | Phase 7 engine, customer accounting policy, ADR-005 | Interfaces by Phase 7 gate; final before Phase 10 pilot | Blocks defensible multi-currency/unit reconciliation in production | Product Lead with Finance Operations Lead |
 | ADR-009 | MCP client support matrix | Open | One Atlas MCP implementation; validate each client independently | Phase 9, ADR-002, customer plans | During Phase 9; before declaring a client supported | Risks overstated compatibility, broken integrations, unsupported auth flows | Head of Engineering |
-| ADR-010 | Data residency and tenancy tiers | Open | Shared multi-tenant with strict logical isolation; abstractions permit future regional/dedicated deployment | ADR-001, ADR-007, commercial input | Before production region selection and enterprise pilot (Phase 10) | Blocks residency commitments and region choice; risk of unsupported enterprise terms | Head of Engineering with Compliance Lead |
+| ADR-010 | Data residency and tenancy tiers | Accepted | **Shared multi-tenant, single region** - accepted 2026-11-23: sandbox `eu-west-1`, strict logical isolation; dedicated tiers/multi-region/customer residency deferred | ADR-001, ADR-007, commercial input | Resolved for sandbox/v0 | Unblocks sandbox region; no residency commitment until a real customer | Head of Engineering with Compliance Lead |
 
 ### 24.2 Decision record format
 

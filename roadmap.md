@@ -1194,8 +1194,9 @@ runbook in `backend/deploy/aws.md` and containers in `backend/Dockerfile*`. ADR-
 (`backend/deploy/iam.md`). ADR-006 (observability) is **Accepted** — CloudWatch + X-Ray behind a central ADOT
 collector gateway, logs via CloudWatch, vendor-neutral OTLP (`backend/deploy/observability.md`). ADR-007
 (retention) is **Accepted** — fixed v0 windows, `legal_holds`, governed deletion, with automated sweeps/export
-left for Phase 10. The Phase 10 sandbox will use realistic synthetic data rather than a live customer;
-prerequisites above still apply.
+left for Phase 10. ADR-010 (residency/tenancy) is **Accepted** — shared multi-tenant, single `eu-west-1`
+region for the sandbox/v0; dedicated tiers and customer residency are deferred. The Phase 10 sandbox will use
+realistic synthetic data rather than a live customer; prerequisites above still apply.
 
 **Implementation tasks:**
 

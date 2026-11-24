@@ -3,8 +3,8 @@
 ADR-001 selects **AWS** as the primary runtime for Atlas. This document is the
 implementation runbook for the sandbox and the template for the Phase 10
 sandbox pilot. It does not create infrastructure; Terraform/console resources
-are provisioned per environment. The final production region remains open under
-ADR-010; the sandbox uses `eu-west-1`.
+are provisioned per environment. ADR-010 fixes the sandbox/v0 region as
+`eu-west-1`; customer-specific residency and dedicated tiers remain deferred.
 
 ## Process topology
 
