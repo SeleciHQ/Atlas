@@ -1,0 +1,45 @@
+# AWS Distro for OpenTelemetry (ADOT) collector gateway (ADR-006).
+# Run as its own ECS service with the atlas-<env>-otel task role. Applications
+# send OTLP to this service; only the collector writes to X-Ray/CloudWatch.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+  batch: {}
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${env:ATLAS_ENV}
+        action: upsert
+
+exporters:
+  awsxray:
+    region: ${env:AWS_REGION}
+  awsemf:
+    region: ${env:AWS_REGION}
+    namespace: Atlas
+    log_group_name: /atlas/${env:ATLAS_ENV}/metrics
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [awsxray]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [awsemf]

@@ -15,6 +15,7 @@ ADR-010; the sandbox uses `eu-west-1`.
 | `atlas-worker` | ECS Fargate service | None | Scale on queue depth or fixed replicas; at-least-once handlers. |
 | `atlas-scheduler` | ECS Fargate service | None | One replica; outbox dispatch, lease reap, approval expiry. Extra replicas are lock-safe but unnecessary. |
 | Python extraction worker | ECS Fargate service | None | Runs `python/atlas_worker.py`; writes only job results. |
+| `atlas-otel` | ECS Fargate service | None | ADOT collector gateway; only service with X-Ray/CloudWatch write permissions. |
 | `atlas-migrate` | One-off ECS task | None | `up` after every deploy that adds migrations. |
 | `atlas-provision` | One-off ECS task | None | Re-run after migrations so new tables/functions get role grants. |
 
@@ -101,6 +102,21 @@ ATLAS_SECRET_KEY=<same key as the API>
 JOB_LEASE_SECONDS / JOB_POLL_MS / OUTBOX_POLL_MS / LEASE_REAP_MS / APPROVAL_EXPIRY_MS
 ```
 
+`atlas-otel`:
+
+```text
+ATLAS_ENV=staging
+AWS_REGION=eu-west-1
+```
+
+All application services also receive (once OTel instrumentation lands):
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.atlas-<env>.local:4317
+OTEL_SERVICE_NAME=<process workload name>
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=<env>,service.namespace=atlas
+```
+
 ## Deploy order
 
 1. Apply migrations: one-off `atlas-migrate up`.
@@ -122,10 +138,10 @@ as a deliberate, reviewed one-off task.
 
 ## Observability
 
-CloudWatch Logs captures structured JSON now. Application code already emits
-structured logs; OpenTelemetry export and the durable backend are ADR-006.
-Initial alarms for the sandbox: ECS task restarts, ALB 5xx, RDS connections,
-queue depth/oldest pending, dead-letter count, approval-expiry failures.
+ADR-006 selects CloudWatch + X-Ray behind an ADOT collector gateway. See
+[`observability.md`](observability.md) for the topology, collector config,
+log-based metrics, alarms, dashboards and retention. Application task roles
+remain free of AWS write permissions; only `atlas-otel` can write telemetry.
 
 ## Sandbox pilot notes
 

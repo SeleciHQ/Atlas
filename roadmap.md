@@ -1191,8 +1191,9 @@ provider); ADR-007 retention defaults agreed; ADR-010 residency decision made fo
 **ADR status (2026-11-23):** ADR-001 (hosting) is **Accepted** — AWS ECS Fargate + RDS PostgreSQL, with the
 runbook in `backend/deploy/aws.md` and containers in `backend/Dockerfile*`. ADR-004 (workload identity) is
 **Accepted** — per-process ECS task roles, Secrets Manager-injected database credentials, no static AWS keys
-(`backend/deploy/iam.md`). ADR-006 (observability) is unblocked but still open. The Phase 10 sandbox will use
-realistic synthetic data rather than a live customer; prerequisites above still apply.
+(`backend/deploy/iam.md`). ADR-006 (observability) is **Accepted** — CloudWatch + X-Ray behind a central ADOT
+collector gateway, logs via CloudWatch, vendor-neutral OTLP (`backend/deploy/observability.md`). The Phase 10
+sandbox will use realistic synthetic data rather than a live customer; prerequisites above still apply.
 
 **Implementation tasks:**
 

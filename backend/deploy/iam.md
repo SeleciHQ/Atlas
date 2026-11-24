@@ -17,13 +17,17 @@ rotation are deferred.
 | `atlas-<env>-python` | Python extraction worker | None by default |
 | `atlas-<env>-migrate` | one-off `atlas-migrate` task | None by default |
 | `atlas-<env>-provision` | one-off `atlas-provision` task | None by default |
+| `atlas-<env>-otel` | ADOT collector gateway | X-Ray segment/telemetry write; CloudWatch metrics log group only |
 
 An empty task-role policy is deliberate: the applications do not call AWS APIs
 today. Database, WorkOS and R2 credentials arrive as ECS-injected secrets, and
-R2 uses external S3-compatible keys rather than AWS IAM.
+R2 uses external S3-compatible keys rather than AWS IAM. The one exception is
+`atlas-<env>-otel`, which writes telemetry to X-Ray and the environment's
+CloudWatch metrics log group.
 
 Templates: `iam/ecs-task-trust-policy.json`, `iam/ecs-execution-policy.json`,
-`iam/task-role-policy.json`. Replace `<ACCOUNT_ID>`, `<REGION>` and `<ENV>`.
+`iam/task-role-policy.json`, `iam/otel-role-policy.json`. Replace `<ACCOUNT_ID>`,
+`<REGION>` and `<ENV>`.
 
 ## Database role mapping
 

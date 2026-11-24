@@ -386,8 +386,10 @@ ADR-001 selects AWS. `backend/Dockerfile` builds every Go process with
 `backend/Dockerfile.python` packages the extraction worker. Images run as nonroot and include
 `/app/migrations` + `/app/scripts`. The full ECS/RDS/ALB/Secrets Manager runbook, environment matrix, deploy
 order and sandbox notes are in [`deploy/aws.md`](deploy/aws.md). Per-process IAM task roles, database-role
-mapping and secret rotation are in [`deploy/iam.md`](deploy/iam.md) (ADR-004). The MCP service exposes
-`GET /healthz` for ALB health checks. The sandbox uses `eu-west-1`; the production region remains under ADR-010.
+mapping and secret rotation are in [`deploy/iam.md`](deploy/iam.md) (ADR-004). CloudWatch/X-Ray topology,
+collector config and alarms are in [`deploy/observability.md`](deploy/observability.md) (ADR-006). The MCP
+service exposes `GET /healthz` for ALB health checks. The sandbox uses `eu-west-1`; the production region
+remains under ADR-010.
 
 ## Row-Level Security and database roles
 

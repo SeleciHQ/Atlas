@@ -2083,6 +2083,34 @@ home; retention and access controls cannot be reviewed.
 alerting flexibility; retention and access control; regional hosting; cost model at pilot and projected
 scale; OpenTelemetry compatibility; effort to migrate later.
 
+**Decision record (accepted 2026-11-23).**
+
+> **Context:** ADR-001 selects AWS. Atlas needs durable logs, traces and metrics for the sandbox without
+> coupling application code to a vendor, while keeping the ADR-004 rule that application task roles hold no
+> AWS data-plane permissions.
+>
+> **Options considered:** (a) Amazon CloudWatch + X-Ray fed by a central ADOT collector; (b) a hosted
+> observability vendor (Grafana Cloud, Datadog, Honeycomb) fed by OTLP; (c) self-managed Prometheus/Grafana/
+> Tempo/Loki. A vendor adds procurement and a second account/credential path before the sandbox; self-managed
+> adds stateful operations and conflicts with the managed-first direction.
+>
+> **Recommendation:** CloudWatch + X-Ray with a single ADOT collector gateway. Applications emit structured
+> JSON logs to stdout and OpenTelemetry over OTLP; only the `atlas-otel` service's task role writes to
+> X-Ray/CloudWatch. Logs stay in CloudWatch Logs; the collector exports traces to X-Ray and metrics via EMF.
+>
+> **Consequences:** CloudWatch query/alerting is adequate for the sandbox but less capable than specialist
+> vendors; X-Ray retention defaults to 30 days. Vendor-neutral instrumentation keeps migration to an OTLP
+> backend a collector change. Application task roles remain free of AWS write permissions. Metric/log volume
+> and cost must be reviewed at pilot scale; the decision is revisited if trace volume, query needs or cost
+> exceed CloudWatch/X-Ray.
+>
+> **Final decision:** Amazon CloudWatch + AWS X-Ray behind a central ADOT/OpenTelemetry collector gateway for
+> the sandbox and v0. Logs via CloudWatch Logs, traces via X-Ray, metrics via CloudWatch EMF, 30-day
+> log/trace retention. No vendor-specific SDKs in application code. Runbook and collector config:
+> `backend/deploy/observability.md` and `backend/deploy/otel/collector.yaml`.
+>
+> **Date finalized:** 2026-11-23.
+
 ### ADR-007 — Retention and legal-hold policy
 
 **What needs to be decided.** Retention, deletion and legal-hold rules for original documents, extracted
@@ -2198,7 +2226,7 @@ demand from the pipeline.
 
 ### 24.1 Architecture Decision Register
 
-Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002 and ADR-004 are Accepted; the other seven ADRs are Open.**
+Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002, ADR-004 and ADR-006 are Accepted; the other six ADRs are Open.**
 
 | ID | Decision | Status | Provisional default | Dependencies | Decision milestone | Impact | Decision owner |
 |---|---|---|---|---|---|---|---|
@@ -2207,7 +2235,7 @@ Status values: Proposed, Open, Accepted, Deferred. **ADR-001, ADR-002 and ADR-00
 | ADR-003 | First ERP/accounting connector | Open | Mock connector + document-inbox connector behind the shared contract | Pilot customer, Phase 4 contract | Before Phase 10 implementation | Blocks real ingestion/write-back validation and pilot scope | Product Lead |
 | ADR-004 | Workload identity mechanism | Accepted | **ECS task roles per process** - accepted 2026-11-23: no shared task role, environment execution role for ECR/logs/Secrets Manager, per-process DB roles, no static AWS keys; RDS IAM auth/automated rotation deferred | ADR-001 | Resolved | Unblocks least-privilege production credentials; guidance in `backend/deploy/iam.md` | Security Lead with Platform Lead |
 | ADR-005 | Document extraction engine/provider | Open | Provider-independent interface + mock; benchmark before selection | Phase 6 corpus, ADR-007, ADR-010 | Benchmark by Phase 6 gate; selection before Phase 10 production extraction | Blocks production extraction quality, cost and privacy review | Head of Engineering with Product Lead |
-| ADR-006 | Observability backend | Open | Vendor-neutral OpenTelemetry; backend chosen with hosting | ADR-001 | Before staging/production observability provisioning (Phase 10) | Blocks durable telemetry, alerting and security monitoring in pilot | Platform Lead |
+| ADR-006 | Observability backend | Accepted | **CloudWatch + X-Ray** - accepted 2026-11-23: central ADOT collector gateway, OTLP from apps, logs via CloudWatch Logs, 30-day retention; vendor-neutral instrumentation | ADR-001 | Resolved | Unblocks durable telemetry/alerting; config in `backend/deploy/observability.md` | Platform Lead |
 | ADR-007 | Retention and legal-hold policy | Open | Conservative defaults + organization policies; governed deletion; preserve required audit | Contracts, ADR-005, ADR-010 | Before accepting real customer documents (Phase 10 gate) | Blocks pilot data agreements, deletion workflows and storage lifecycle rules | Compliance Lead |
 | ADR-008 | FX rate source and UoM catalog ownership | Open | Internal abstractions; record rate source/rate/timestamp and conversion evidence | Phase 7 engine, customer accounting policy, ADR-005 | Interfaces by Phase 7 gate; final before Phase 10 pilot | Blocks defensible multi-currency/unit reconciliation in production | Product Lead with Finance Operations Lead |
 | ADR-009 | MCP client support matrix | Open | One Atlas MCP implementation; validate each client independently | Phase 9, ADR-002, customer plans | During Phase 9; before declaring a client supported | Risks overstated compatibility, broken integrations, unsupported auth flows | Head of Engineering |
